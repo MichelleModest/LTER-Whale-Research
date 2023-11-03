@@ -1,0 +1,411 @@
+---
+title: "Descriptions of Route"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+1) General qualitative description of physical characteristics
+2) Great circle speed, total avg speed using BSAM corrected locations, split the route into 4 parts:
+     A) WAP to tip of South America (Cape horn -55.9833)
+     B) tip of South America to peninsula de paracas(this is when the whales come in and start to hug the coast for the first time) -13.8667
+    C) Peninsula de paracas to salinas (this is where we think they start breeding behavior -2.190181)
+    D) salinas and above (breeding behavior)
+For each of these sections, I will do average speeds.
+3) Percentage of Routes in national waters
+
+Take out 121208 and rerun things
+First, Great circle speeds. We can keep these just have to fix the one whale. 121207
+```{r}
+library(argosfilter)
+library(tidyverse)
+library(lubridate)
+library(knitr)
+opts_chunk$set(echo=F,warning=F,message=F,fig.width = 11,fig.height = 5,cache=F)
+library(boot)
+library(raster)
+library(tidyr)
+library(ggplot2)
+# MASS This fucks with dplyr, load later
+library(ggmap)
+library(dplyr)
+library(chron)
+library(gridExtra)
+library(stringr)
+library(R2jags)
+library(maptools)
+library(reshape2)
+#New model to be run, flag turned off if just updating.
+newModel<-T
+register_google(key="<insertgooglekeyhere>")
+adat<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/bsam models/bsamspeeds_migonly.csv")
+adat<-adat%>%filter(id!=121208)
+bdat<-split(adat,adat$id)
+#then define what you want to do to each list, for instance apply an r package and add results as new column
+fg<-lapply(bdat,function(x){
+  y<-x %>% 
+    mutate(total_distance = sum(distance_km), total_time=sum(Hours_elapsed))
+  return(y)
+})
+
+gdat<-bind_rows(fg)
+
+
+
+gdat<-gdat%>%group_by(id)%>%filter(row_number()==1 | row_number()==n())
+
+hdat<-split(gdat,gdat$id)
+#then define what you want to do to each list, for instance apply an r package and add results as new column
+gh<-lapply(hdat,function(x){
+  y<-x %>% 
+    mutate(GC_distance = distanceTrack(lat, lon))
+  return(y)
+})
+
+idat<-bind_rows(gh)
+
+cdat<-idat%>%mutate(km_hr=total_distance/total_time)
+cdat<-cdat%>%mutate(m_s=km_hr*5/18)
+write.csv(cdat,"/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/summaryGCmig.csv")
+```
+
+Now find general average speeds
+```{r}
+edat<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/bsam models/bsamspeeds_migonly.csv")
+edat<-edat%>%filter(id!=121208)
+
+fdat<-edat%>%group_by(id)%>%mutate(avg_speed=mean(Speed_km_h))
+gdat<-fdat%>%filter(row_number()==1| row_number()==n())
+hdat<-gdat%>%mutate(avg_speed_m_s=avg_speed*5/18)
+write.csv(hdat,"/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/summaryavgsp.csv")
+
+```
+
+Now do speeds by section
+```{r}
+idat<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/bsam models/model4-29-more iterations/bsamspeeds.csv")
+idat<-idat%>%filter(id!=121208)
+
+bottom<-idat%>%filter(lat<=-55.9833)
+middle<-idat%>%filter(lat>=-55.9833 & lat<=-13.8667)
+mid<-middle%>%group_by(id)%>%filter(row_number()==1 | row_number()==n())
+top<-idat%>%filter(lat>=-13.8667 & lat<=-2.190181)
+breeding<-idat%>%filter(lat>=-2.190181)
+
+#Now we will do the average speeds for each section
+bottom<-bottom%>%group_by(id)%>%mutate(avg_speed=mean(Speed_km_h))
+middle<-middle%>%group_by(id)%>%mutate(avg_speed=mean(Speed_km_h))
+top<-top%>%group_by(id)%>%mutate(avg_speed=mean(Speed_km_h))
+breeding<-breeding%>%group_by(id)%>%mutate(avg_speed=mean(Speed_km_h))
+
+#Now lets look at just first and last for each
+bot<-bottom%>%group_by(id)%>%filter(row_number()==1 | row_number()==n())
+bot<-bot%>%mutate(avg_speed_m_s=avg_speed*5/18)
+
+mid<-middle%>%group_by(id)%>%filter(row_number()==1 | row_number()==n())
+mid<-mid%>%mutate(avg_speed_m_s=avg_speed*5/18)
+t<-top%>%group_by(id)%>%filter(row_number()==1 | row_number()==n())
+t<-t%>%mutate(avg_speed_m_s=avg_speed*5/18)
+breed<-breeding%>%group_by(id)%>%filter(row_number()==1 | row_number()==n())
+breed<-breed%>%mutate(avg_speed_m_s=avg_speed*5/18)
+
+#Now we should save them and then make a sheet. 
+#write.csv(bot,"/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/avgspeeds_bottom.csv")
+#write.csv(mid,"/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/avgspeeds_middle.csv")
+#write.csv(t,"/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/avgspeeds_top.csv")
+#write.csv(breed,"/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/avgspeeds_breeding.csv")
+
+#Actually we are going to use a joining function for these
+#first we have to rename
+bot1<-bot%>%dplyr::select(3,19:20)
+names(bot1) <- c("id", "Bottom_avg_sp_km_hr", "Bottom_avg_sp_m_s")
+
+mid1<-mid%>%dplyr::select(3,19:20)
+names(mid1) <- c("id", "Middle_avg_sp_km_hr", "Middle_avg_sp_m_s")
+
+top1<-t%>%dplyr::select(3,19:20)
+names(top1) <- c("id", "Top_avg_sp_km_hr", "Top_avg_sp_m_s")
+
+breed1<-breed%>%dplyr::select(3,19:20)
+names(breed1) <- c("id","Breeding_avg_sp_km_hr", "Breeding_avg_sp_m_s")
+
+
+a<-bot1%>%
+  left_join(mid1, c("id"="id"))
+b<-a%>%left_join(top1,by="id")
+speeds_section<-b%>%left_join(breed1, by="id")
+speeds_section<-speeds_section%>%group_by(id)%>%filter(row_number()==1)
+#rearrange order
+speeds_section<-speeds_section%>%dplyr::select("id","Bottom_avg_sp_km_hr","Middle_avg_sp_km_hr","Top_avg_sp_km_hr","Breeding_avg_sp_km_hr","Bottom_avg_sp_m_s","Middle_avg_sp_m_s","Top_avg_sp_m_s","Breeding_avg_sp_m_s")
+
+
+#oops we already got rid of the breeding area values
+br<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/bsam models/bsamspeeds.csv")
+breeding<-br%>%filter(lat>=-2.190181)
+breeding<-breeding%>%group_by(id)%>%mutate(avg_speed=mean(Speed_km_h))
+breed<-breeding%>%group_by(id)%>%filter(row_number()==1)
+breed<-breed%>%mutate(avg_speed_m_s=avg_speed*5/18)
+breed<-breed%>%dplyr::select(2,17:18)
+names(breed) <- c("id","Breeding_avg_sp_km_hr", "Breeding_avg_sp_m_s")
+speeds_section<-speeds_section%>%dplyr::select(1:4, 6:8)
+speeds_section<-speeds_section%>%left_join(breed, by="id")
+speeds_section<-speeds_section%>%dplyr::select("id","Bottom_avg_sp_km_hr","Middle_avg_sp_km_hr","Top_avg_sp_km_hr","Breeding_avg_sp_km_hr","Bottom_avg_sp_m_s","Middle_avg_sp_m_s","Top_avg_sp_m_s","Breeding_avg_sp_m_s")
+write.csv(speeds_section,"/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/avgspeeds_all_Sections.csv")
+#I have a graph of the speeds in the above worksheet
+```
+Graphing the sections
+```{r}
+
+all<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/allspR.csv")
+all$location <- factor(all$location, levels = c("WAP - Cape Horn", "Cape Horn - Peninsula de Paracas", "Peninsula de Paracas- Salinas", "Salinas and above"))
+ggplot(data=all)+
+  geom_point(mapping=aes(x=location,y=speed), alpha=.25, color="blue",size=5)+ theme(axis.text.x=element_text(angle = -25, hjust = 0))+ylab("Speed (km/hr)")+xlab("Segment of Route")+ggtitle("Speed as a function of location")+ theme(plot.title = element_text(hjust=0.5))
+#ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/speeds_Sections_all.jpg", width=8)
+
+
+graph<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/speedsectionsforgraph.csv")
+graph$Location <- factor(graph$Location, levels = c("WAP - Cape Horn", "Cape Horn - Peninsula de Paracas", "Peninsula de Paracas- Salinas", "Salinas and above"))
+graph$ID<-as.factor(graph$ID)
+ggplot(data=graph)+
+  geom_line(mapping=aes(x=Location,y=Speed..km.hr., color=ID), size=1)
+
+graph2<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/avgspeedgraphnumbers.csv")
+graph2$ID<-as.factor(graph2$ID)
+ggplot(data=graph2)+
+  geom_line(mapping=aes(x=Location,y=Speed..km.hr., color=ID), size=1)+ylab( "Speed (km/hr)")
+#ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/speeds_all_Sections_5.jpg", width=8)
+```
+Percentage of Routes in National waters
+1) Get just those 5 whales, the bsam version, and split them into 5 separate data sheets
+2) for each, check how many points DURING migration they have
+3) For each, check how many points within each country
+```{r}
+all<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/bsam models/bsamspeeds_migonly.csv")
+#we are going to test that it is migrators only
+pp<-c(mean(all$lon),-40)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_point(data=all, aes(x=lon, y=lat),size=.5) + scale_color_discrete(guide="none") + mytheme
+```
+looks good, now we will get those migrators who went the whole way only
+(Ptt= 112699, 121210, 123232, 131130, 166123)
+```{r}
+a112699<-all%>%filter(id==112699)
+a121210<-all%>%filter(id==121210)
+a123232<-all%>%filter(id==123232)
+a131130<-all%>%filter(id==131130)
+a166123<-all%>%filter(id==166123)
+
+#graph individually
+ggmap(m)+geom_point(data=a112699, aes(x=lon, y=lat),size=.5) + scale_color_discrete(guide="none") + mytheme
+ggmap(m)+geom_point(data=a121210, aes(x=lon, y=lat),size=.5) + scale_color_discrete(guide="none") + mytheme
+ggmap(m)+geom_point(data=a123232, aes(x=lon, y=lat),size=.5) + scale_color_discrete(guide="none") + mytheme
+ggmap(m)+geom_point(data=a131130, aes(x=lon, y=lat),size=.5) + scale_color_discrete(guide="none") + mytheme
+ggmap(m)+geom_point(data=a166123, aes(x=lon, y=lat),size=.5) + scale_color_discrete(guide="none") + mytheme
+
+```
+
+112699=98
+  chile-47 pts = 48%
+  peru-27 pts = 28%
+  ecuador-3 = 3%
+  =77/98 = 79%
+  
+121210=110
+  chile = 43 = 39%
+  peru =23 pts = 21%
+  ecuador =4 = 4%
+  total=64%
+  
+123232=100
+  chile = 39 = 39%
+  peru- 25 pts = 25%
+  ecuador- 6= 6%
+  total=70%
+  
+131130=104
+  chile -55=53%
+  peru- 18 = 17%
+  ecuador - 3 = 3%
+  total= 73%
+
+166123=84
+ chile - 33 - 39%
+  peru- 25 - 30%
+  ecuador-6 - 7%
+  total-63- 75%
+  
+  72% total time
+
+```{r}
+
+p0<-ggmap(m)+geom_point(data=a112699, aes(x=lon, y=lat, col="red"),size=.05) + scale_color_discrete(guide="none") + mytheme
+p1<-ggmap(m)+geom_point(data=a121210, aes(x=lon, y=lat, col="red"),size=.05) + scale_color_discrete(guide="none") + mytheme
+p2<-ggmap(m)+geom_point(data=a123232, aes(x=lon, y=lat, col="red"),size=.05) + scale_color_discrete(guide="none") + mytheme
+p3<-ggmap(m)+geom_point(data=a131130, aes(x=lon, y=lat, col="red"),size=.05) + scale_color_discrete(guide="none") + mytheme
+p4<-ggmap(m)+geom_point(data=a166123, aes(x=lon, y=lat, col="red"),size=.05) + scale_color_discrete(guide="none") + mytheme
+
+
+library("rgdal") # for `ogrInfo()` and `readOGR()`
+library("tools") # for `file_path_sans_ext()`
+library(ggplot2)
+library("sp") # for `point.in.polygon()` and `spDists()`
+library("tidyr") # for `gather()`
+library("readr") # for `write_tsv()`
+#path.eez.world.v8 <- ("/Users/danielpalacios/Documents/DMP/dmp_data/World_EEZ/World_EEZ_v8_20140228_LR")
+path.eez.world.v9 <- ("/Users/michellemodest/Google Drive/Documents/UCSC/WWF/World_EEZ_v9_20161021_LR")
+#fnam.eez.world.v8 <- "World_EEZ_v8_2014.shp"
+fnam.eez.world.v9 <- "eez_lr.shp"
+#eez.world.v8 <- readOGR(dsn = path.eez.world.v8, 
+#                        layer = file_path_sans_ext(fnam.eez.world.v8))
+eez.world.v9 <- readOGR(dsn = path.eez.world.v9, 
+                        layer = file_path_sans_ext(fnam.eez.world.v9))
+# A Large SpatialLinesDataFrame object with 281 features and 23 fields (18.9 Mb)
+
+# Extract the EEZ for the USA:
+#dat.eez.usa2 <- eez.world.v8[eez.world.v8@data$Country == "United States", ]
+# For v. 9 use $Territory1 instead of $Country:
+dat.eez.chile <- eez.world.v9[eez.world.v9@data$Territory1 == "Chile", ]
+dat.eez.peru <- eez.world.v9[eez.world.v9@data$Territory1 == "Peru", ]
+dat.eez.ec <- eez.world.v9[eez.world.v9@data$Territory1 == "Ecuador", ]
+dat.eez.col <- eez.world.v9[eez.world.v9@data$Territory1 == "Colombia", ]
+dat.eez.is <- eez.world.v9[eez.world.v9@data$Territory1 == "Islas San Félix and San Ambrosio", ]
+dat.eez.an <- eez.world.v9[eez.world.v9@data$Territory1 == "Antarctica", ]
+# A Formal class Large SpatialPolygonsDataFrame
+
+# Fortify the shapefile data:
+#dat.eez.usa2 <- fortify(dat.eez.usa2)
+# `fortify.shape()` did not work for v. 8 so we had to use `fortify()`.
+# message: Regions defined for each Polygons
+dat.eez.chile <- fortify(dat.eez.chile)
+dat.eez.peru <- fortify(dat.eez.peru)
+dat.eez.ec <- fortify(dat.eez.ec) 
+dat.eez.col <- fortify(dat.eez.col) 
+dat.eez.is<- fortify(dat.eez.is)
+dat.eez.an<- fortify(dat.eez.an) 
+# a 10298x30 dataframe
+ p0+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)
+ 
+ #ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/112699borders.svg", width=10)
+  p1+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)
+  
+  #ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/121210borders.svg", width=10)
+
+    p2+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)
+  
+  #ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/123232borders.svg", width=10)
+
+    
+
+    p3+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)
+  
+ #ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/131130borders.svg", width=10)
+    p4+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)
+    
+  ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/Sample statistics/166123borders.svg", width=10)
+
+ggmap(m)+geom_point(data=mig7, aes(x=x, y=y,col=Behavior,group=paste(Animal,Track)),alpha=0.7, size = 0.01)   + mytheme+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/beh_map_points_borders.svg",height=20,width=25)
+```

@@ -1,0 +1,28 @@
+---
+title: "WWF summary"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+f<-list.files("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data from dropbox",pattern="Summary",full.names=T,recursive = T)
+gdat<-lapply(f,function(x) read_csv(x))
+gdat<-bind_rows(gdat)
+head(gdat)
+
+#we have to filter out the two wacky ones from 2018
+
+#this summary sheet is not great. Let's load in own data and calc
+fdat<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/All_animals_cleaned.csv")
+fdat$Date<-ymd(fdat$Date)
+f_l<-fdat%>%group_by(Ptt)%>%filter(row_number()==1 | row_number()==n())
+#for total days
+days<-fdat%>%group_by(Ptt, Date)%>%filter(row_number()==1)
+animals<-fdat%>%group_by(Ptt)%>%filter(row_number()==1)
+dates<-fdat%>%group_by(Date)%>%filter(row_number()==1)
+#rows is number total days - 2899
+```

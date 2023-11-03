@@ -1,0 +1,76 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+pp<-c(mean(mig6$x),-40)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="hybrid",color="bw")
+p0<-ggmap(m)+geom_path(data=mig6, aes(x=x, y=y,col=bstate,group=paste(Animal,Track)),size=.5,alpha=0.7)   + mytheme
+
+```
+
+
+```{r}
+
+library("rgdal") # for `ogrInfo()` and `readOGR()`
+library("tools") # for `file_path_sans_ext()`
+library(ggplot2)
+library("sp") # for `point.in.polygon()` and `spDists()`
+library("tidyr") # for `gather()`
+library("readr") # for `write_tsv()`
+#path.eez.world.v8 <- ("/Users/danielpalacios/Documents/DMP/dmp_data/World_EEZ/World_EEZ_v8_20140228_LR")
+path.eez.world.v9 <- ("/Users/michellemodest/Google Drive/Documents/UCSC/WWF/World_EEZ_v9_20161021_LR")
+#fnam.eez.world.v8 <- "World_EEZ_v8_2014.shp"
+fnam.eez.world.v9 <- "eez_lr.shp"
+#eez.world.v8 <- readOGR(dsn = path.eez.world.v8, 
+#                        layer = file_path_sans_ext(fnam.eez.world.v8))
+eez.world.v9 <- readOGR(dsn = path.eez.world.v9, 
+                        layer = file_path_sans_ext(fnam.eez.world.v9))
+# A Large SpatialLinesDataFrame object with 281 features and 23 fields (18.9 Mb)
+
+# Extract the EEZ for the USA:
+#dat.eez.usa2 <- eez.world.v8[eez.world.v8@data$Country == "United States", ]
+# For v. 9 use $Territory1 instead of $Country:
+dat.eez.chile <- eez.world.v9[eez.world.v9@data$Territory1 == "Chile", ]
+dat.eez.peru <- eez.world.v9[eez.world.v9@data$Territory1 == "Peru", ]
+dat.eez.ec <- eez.world.v9[eez.world.v9@data$Territory1 == "Ecuador", ]
+dat.eez.col <- eez.world.v9[eez.world.v9@data$Territory1 == "Colombia", ]
+dat.eez.is <- eez.world.v9[eez.world.v9@data$Territory1 == "Islas San Félix and San Ambrosio", ]
+dat.eez.an <- eez.world.v9[eez.world.v9@data$Territory1 == "Antarctica", ]
+# A Formal class Large SpatialPolygonsDataFrame
+
+# Fortify the shapefile data:
+#dat.eez.usa2 <- fortify(dat.eez.usa2)
+# `fortify.shape()` did not work for v. 8 so we had to use `fortify()`.
+# message: Regions defined for each Polygons
+dat.eez.chile <- fortify(dat.eez.chile)
+dat.eez.peru <- fortify(dat.eez.peru)
+dat.eez.ec <- fortify(dat.eez.ec) 
+dat.eez.col <- fortify(dat.eez.col) 
+dat.eez.is<- fortify(dat.eez.is)
+dat.eez.an<- fortify(dat.eez.an) 
+# a 10298x30 dataframe
+ p0+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)
+
+
+
+p.eez.vliz
+```

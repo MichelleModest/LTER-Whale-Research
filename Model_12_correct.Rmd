@@ -1,0 +1,775 @@
+---
+title: "Correct R"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##load the proper programs
+```{r}
+library(tidyverse)
+library(lubridate)
+library(knitr)
+opts_chunk$set(echo=F,warning=F,message=F,fig.width = 11,fig.height = 5,cache=F)
+library(boot)
+library(raster)
+library(tidyr)
+library(ggplot2)
+# MASS This fucks with dplyr, load later
+library(ggmap)
+library(dplyr)
+library(chron)
+library(gridExtra)
+library(stringr)
+library(R2jags)
+library(maptools)
+library(reshape2)
+#New model to be run, flag turned off if just updating.
+newModel<-T
+register_google(key="<insertgooglekeyhere>")
+```
+
+## Only migrators
+We have to decide whether we are keeping 123236 and 121208. Right now they are still included
+NEW MIGRATORS!!
+```{r}
+migrators<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/All_animals_cleaned.csv")
+migrators$Ptt<-as.factor(migrators$Ptt)
+summary(migrators)
+#This DOES have the 2016 tags that were on and off, 131133", "131136". Probably want to remove later 
+migrators<-migrators%>%filter(Ptt%in%c("112699", "121207", "121210", "123224", "123232", "123236", "131127",  "131130", "131132", "131133","131136","166122", "166123", "166125", "166126", "166128"))
+
+#test that it worked
+mig<-migrators%>%
+  group_by(Ptt)%>%
+  filter(row_number()==1)
+mig
+```
+```{r}
+migrators$timestamp<-as.character(migrators$timestamp)
+migrators$timestamp<-as.POSIXct(migrators$timestamp,format="%Y-%m-%d %H:%M:%S",tz="GMT")
+```
+
+```{r}
+#first we will check if there are duplicate timestamps for any individuals
+time<-migrators %>% group_by(Ptt,timestamp) %>% summarize(n=n()) %>% filter(n>1)
+#looks like no. 
+# Now lets test if there are any duplicate locations for any of the animals
+location<-migrators%>%group_by(Ptt, Latitude, Longitude)%>%summarize(n=n())%>%filter(n>1)
+#but thats ok we keep it
+ungroup(migrators)
+```
+
+##3. Get rid of NAs
+```{r}
+#remove empty timestamps
+migrators<-migrators[!is.na(migrators$timestamp),]#there aren't any
+```
+
+
+
+##4. Get rid of Z class
+
+```{r}
+migrators<-migrators%>%filter(Quality!="Z")
+mig<-droplevels(migrators)
+```
+
+
+
+##5. Get rid of pre-migration data
+```{r}
+mig2<-mig
+#test
+mig_migonly<-mig2
+
+
+mig2$Date<-ymd(mig2$Date)
+
+f_l<-mig2%>%group_by(Ptt)%>%filter(row_number()==1 | row_number()==n())
+
+#Just an aside here
+
+f_l_migration<-mig_migonly%>%group_by(Ptt)%>%filter(row_number()==1 | row_number()==n())
+
+
+```
+Let's graph things
+```{r}
+pp<-c(mean(mig2$Longitude),-40)
+mig2$Year<-as.factor(mig2$Year)
+
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_point(data=mig2, aes(x=Longitude, y=Latitude, col=Year),size=.25)  + facet_wrap(~Ptt,ncol=3) 
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/individualspremodel2.jpg", width=8, height=30,  units="in")
+
+
+biopsy<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/Palmer data/Mn_sex.csv")
+
+biopsy_prim<-biopsy%>%
+  count(Tag.ID)%>%
+  filter(n>1)
+
+mig2$Ptt<-as.factor(mig2$Ptt)
+Whale_sex<-mig2%>%
+  left_join(biopsy, c("Ptt"="Tag.ID"))%>%dplyr::select(Ptt:Longitude.x, timestamp:Year.x,Genetic.Sex:Pregnant)
+
+names(Whale_sex)[names(Whale_sex)=='Year.x']<-'Year'
+names(Whale_sex)[names(Whale_sex)=='Latitude.x']<-'Latitude'
+names(Whale_sex)[names(Whale_sex)=='Longitude.x']<-'Longitude'
+Mig_sex<-Whale_sex
+
+Mig_sex<-Mig_sex%>%
+  unite(Sex_Pregnancy,Genetic.Sex,Pregnant, remove=FALSE)
+Mig_sex$Ptt<-as.factor(Mig_sex$Ptt)
+Mig_sex2<-Mig_sex%>%arrange(desc(Sex_Pregnancy),.by_group=TRUE)
+#now graph again
+pp<-c(mean(mig2$Longitude),-40)
+Mig_sex$Sex_Pregnancy<-as.factor(Mig_sex$Sex_Pregnancy)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_point(data=Mig_sex2, aes(x=Longitude, y=Latitude, col=Sex_Pregnancy),size=.25)  + facet_wrap(~Ptt,nrow=3) 
+#ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/individualspremodel.jpg", width=8, units="in")
+
+#Now we will plot all at once
+pp<-c(mean(mig2$Longitude),-40)
+Mig_sex2$Sex_Pregnancy<-as.factor(Mig_sex2$Sex_Pregnancy)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_point(data=Mig_sex, aes(x=Longitude, y=Latitude, col=Sex_Pregnancy),size=.15)
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/allpremodel_sex.jpg", width=8, units="in")
+```
+
+##6. Calculate step lengths and tracks
+First we are going to match the names and labels from Ben's code
+```{r}
+#standardize column names to match the simulation
+#Create an animal tag.
+str(mig_migonly)
+mig_migonly<-mig_migonly%>%dplyr::select(1,3,5,7:9,21:24)
+names(mig_migonly) <- c("X", "Animal", "Date", "argos.lc", "y", "x", "timestamp", "Month", "Day", "Year" )
+mig3<-mig_migonly
+#rearrange
+mig3<-mig3%>%dplyr::select("X", "Animal", "argos.lc", "x", "y", "timestamp", "Month", "Year", "Date")
+
+```
+
+Ok now we are really going off the deep-end with Ben's code, so starting a new name so that mig4 is the thing we can always go back to
+```{r}
+#holding mig 4 for later
+mig4<-mig3
+
+
+##ggplot theme
+mytheme<-theme(axis.text.x=element_blank(),axis.ticks.x=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank(),panel.grid=element_blank())
+
+
+#remake spatial object
+d<-SpatialPointsDataFrame(cbind(mig3$x,mig3$y),data=mig3,proj4string=CRS("+proj=longlat +datum=WGS84"))
+
+#Plot
+pp<-c(mean(mig3$x),-40)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_point(data=mig3, aes(x=x, y=y,col=as.factor(Animal)),size=.25) + scale_color_discrete(guide="none") + mytheme
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/color_map.jpg")
+
+mig3$Month<-factor(mig3$Month,levels=month.name)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_path(data=mig3, aes(x=x, y=y,col=as.factor(Animal)),size=.5)  + facet_wrap(~Month,nrow=2) + scale_color_discrete(guide="none") + theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) + labs(x="",y="")
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/color_map_month.jpg")
+ggmap(m)+geom_point(data=mig3, aes(x=x, y=y,col=as.factor(Animal)),size=.5)  + facet_wrap(~Animal, nrow=2) + scale_color_discrete(guide="none") + theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) + labs(x="",y="")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/color_map_ind.jpg")
+#black and white
+ggplot()+geom_path(data=mig3, aes(x=x, y=y,group=Animal),size=.5)  + facet_wrap(~Month,nrow = 2)  + borders(fill="grey90") + coord_cartesian(ylim = c(-70,10),xlim=c(-60,-85)) + theme_bw() + mytheme + scale_fill_manual(values=rep("NA",8)) + scale_color_discrete(guide="none")
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/bw_map_month.jpg")
+```
+
+```{r}
+##Time is the beginning of the first point.
+step_length=12
+
+dumb1<-split(mig3,mig3$Animal)
+
+#time diff function
+timed<-function(d,step_length){
+  d$j[1]<-0
+  for (x in 2:nrow(d)){
+    d$j[x]<-as.numeric(difftime(as.POSIXct(d$timestamp[x]),as.POSIXct(d$timestamp[x-1]),units="mins"))/(step_length*60)
+  }
+  
+  #Split out track endings
+  ends<-c(1,which(d$j>1),nrow(d))
+
+  for(w in 2:length(ends)){
+    d[ends[w-1]:ends[w],"Track"]<-w-1
+  }
+  
+  #remove tracks that are shorter than 24 hrs
+  track_time<-d %>% group_by(Track) %>% summarize(mt=difftime(max(as.POSIXct(timestamp)),min(as.POSIXct(timestamp)),units="hours")) %>% filter(mt>=24) %>% .$Track
+  
+  d<-d[d$Track %in% track_time,]
+  
+  #renumber the tracks
+  d$Track<-as.numeric(as.factor(d$Track))
+  return(d)
+  }
+
+dumb2<-lapply(dumb1,timed,step_length=step_length)
+
+#Format matrices for jags
+mig3<-bind_rows(dumb2)
+
+######recode whales
+#mig3$Animal<-as.numeric(as.factor(mig3$Animal))
+
+dumb3<-split(mig3,list(mig3$Animal,mig3$Track),drop=TRUE)
+
+dumb4<-lapply(dumb3,function(x){
+#How many observations in each step length segment
+x$step<-as.numeric(cut(as.POSIXct(x$timestamp),paste(step_length,"hours")))
+return(x)
+})
+
+mig3<-bind_rows(dumb4)
+
+#refactor animal
+mig3$Ptt<-mig3$Animal
+mig3$Animal<-as.numeric(as.factor(mig3$Animal))
+
+
+```
+Now we go and do it my way
+```{r}
+mig3<-mig3 %>% group_by(Animal,Track,step) %>% mutate(jStep=1:n())
+
+mig4<-mig3%>%mutate(j=ifelse(step == 1 & jStep == 1,0,j))  
+splitmig<-split(mig4,list(mig4$Animal,mig4$Track),drop=TRUE)
+                    
+                    splitmigsum<-lapply(splitmig,function(x){
+                      x$sumj<-cumsum(x$j)
+                      return(x)
+                    })
+                    
+                    mig5<-bind_rows(splitmigsum)
+
+                    revtrunc <- function(x) { sign(x) * (x - floor(x)) } 
+mig5$basej<-revtrunc(mig5$sumj)                    
+
+mig5<-mig5%>%mutate(step_new=floor(sumj)+1)
+
+#gonna have to redo jstep too
+mig5<-mig5 %>% group_by(Animal,Track,step_new) %>% mutate(jStep_new=1:n())
+ungroup(mig5)
+mig6<-mig5%>%dplyr::select(Ptt, Animal, argos.lc, x, y, timestamp, Month, Year, Date, Track, step_new, jStep_new, basej)
+
+names(mig6)[names(mig6) == 'step_new'] <- 'step'
+names(mig6)[names(mig6)== 'jStep_new']<-'jStep'
+names(mig6)[names(mig6)== 'basej']<-'j'
+head(mig6)
+```
+```{r}
+
+
+mig6$Month<-factor(mig6$Month,levels=month.name)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_point(data=mig6, aes(x=x, y=y,col=as.factor(Animal)),size=.2)  + facet_wrap(~Ptt,nrow=2) + scale_color_discrete(guide="none") + theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) + labs(x="",y="")
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/color_map_ind_afterfilteredandremoved.jpg")
+
+ggmap(m)+geom_path(data=mig6, aes(x=x, y=y,col=as.factor(Animal)),size=.5)  + facet_wrap(~Month,nrow=2) + scale_color_discrete(guide="none") + theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) + labs(x="",y="")
+```
+
+```{r}
+#total number of steps per track/animal
+steps_all<-mig6 %>% group_by(Animal,Track) %>% summarize(n=length(unique(step)))
+
+
+#Cast time array
+j<-acast(mig6,Animal~Track~step~jStep,value.var="j")
+
+#how many observations per individual in each step. Basically the j step. 
+mig6$step<-factor(mig6$step,levels=1:max(steps_all$n))
+idx<-melt(table(mig6$Animal,mig6$Track,mig6$step))
+colnames(idx)<-c("Animal","Track","step","jStep")
+idx<-acast(data=idx,Animal~Track~step) # what this is saying is that
+#we get 225 matrices, 1 for each step, rownames are animal number, column names are track #, values are the number of observations in that animal and track at that step
+
+#month array
+mig6$MonthF<-as.numeric(factor(mig6$Month,levels=month.name))
+
+MonthA<-acast(mig6,Animal~Track~step,value.var="MonthF",fun.aggregate = min)
+MonthA[!is.finite(MonthA)]<-NA
+
+#Individuals
+ind=length(unique(mig6$Animal))
+
+#tracks per indivudal
+tracks<-mig6 %>% group_by(Animal) %>% summarize(tracks=length(unique(Track))) %>% .$tracks
+
+#steps per track
+#resulting matrix - rows are Animal ID, column names are Track number, each spot is number of steps
+steps<-acast(steps_all,Animal~Track,value.var="n")
+
+#index array for merging
+mig6$Index<-1:nrow(mig6)
+
+#obs array
+obs<-melt(mig6,measure.vars=c("x","y"))
+obs<-acast(obs,Animal~Track~step~jStep~variable)
+
+MonthIndex<-acast(mig6,Animal~Track~step,value.var="Month",fun=function(x) names(which.max(table(x))) )
+
+#argos error class array
+mig6$argos.lc<-factor(mig6$argos.lc,levels=c(3,2,1,0,"A","B"))
+mig6$numargos<-as.numeric(mig6$argos.lc)
+obs_class<-acast(mig6,Animal~Track~step~jStep,value.var="numargos")
+```
+
+```{r}
+#Plot
+head(mig6)
+mig6<-mig6 %>% arrange(Animal,Track,step,jStep)
+
+pp<-c(mean(mig6$x),mean(mig6$y))
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_path(data=mig6, aes(x=x, y=y,col=as.factor(Animal),group=paste(Animal,Track)),size=.5) + scale_color_discrete(guide="none") + mytheme
+
+ggplot() +  geom_path(data=mig4,col='blue',aes(x=x,y=y)) +  geom_path(data=mig6,col='red',aes(x=x,y=y),size=2,alpha=0.7)  + facet_wrap(~Animal,scales="free",ncol=4)
+
+ggplot(data=steps_all,aes(x=n*step_length/24)) + geom_histogram() + labs(x="Days") + ggtitle("Track Length")
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/track_lengths.jpg")
+ggplot(data=steps_all,aes(x=Track)) + geom_histogram() + labs(x="Subtracks per Animal")
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/tracks_animal.jpg")
+write.csv(mig6, "")
+```
+
+```{r}
+library(MASS)
+#source jags file
+source("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/JAGS_code/Bens_model.R")
+
+#prior cov shape
+#the left is the jags and the right is the R
+R <- diag(c(1,1))
+data=list(argos=obs,steps=steps,R=R,ind=ind,j=j,idx=idx,tracks=tracks,argos_class=obs_class,Month=MonthA,Months=max(MonthA,na.rm=T))
+
+#parameters to track
+pt<-c("theta","gamma","phi","alpha","state","gamma_mu","gamma_tau")
+
+if(newModel){
+  system.time(jagM<-jags.parallel(model.file = "/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/JAGS_code/Bens_model.R",data=data,n.chains=2,parameters.to.save=pt,n.iter=270000,n.burnin=250000,n.thin=8,DIC=FALSE))
+}
+```
+
+
+
+Chains
+```{r}
+
+#extract parameter name
+#what this does is it creates a news column called parameter that just matches the parameter name from par column
+pc12<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/pc12no16.csv")
+pc12<-pc12%>%dplyr::select(2:5)
+pc12$parameter<-data.frame(str_match(pc12$par,"(\\w+)"))[,-1]
+
+#Extract index
+#Now we are splitting pc12 along parameter lines into groups
+splitpc12<-split(pc12,pc12$parameter)
+
+#single index
+#I think this means we are taking the theta list only and we are adding the behavior
+splitpc12[c("theta")]<-lapply(splitpc12[c("theta")],function(x){
+    sv<-data.frame(str_match(x$par,"(\\w+)\\[(\\d+)]"))[,3]
+    pc12<-data.frame(x,Behavior=sv)
+    return(pc12)
+})
+
+##Double index
+#single index
+splitpc12[c("alpha","gamma")]<-lapply(splitpc12[c("alpha","gamma")],function(x){
+    sv<-data.frame(str_match(x$par,"(\\w+)\\[(\\d+),(\\d+)]"))[,3:4]
+    colnames(sv)<-c("Behavior","Month")
+    pc12<-data.frame(x,sv)
+    return(pc12)
+})
+
+#Three index
+#Adding Animal, Track, step and behavior to Phi
+splitpc12[c("phi")]<-lapply(splitpc12[c("phi")],function(x){
+#As matrices
+    sv<-data.frame(str_match(x$par,"(\\w+)\\[(\\d+),(\\d+),(\\d+),(\\d+)]"))[,3:6]
+    colnames(sv)<-c("Animal","Track","step","Behavior")
+    pc12<-data.frame(x,sv)
+})
+
+
+#State index
+#adding Animal, Track and step to state
+splitpc12[c("state")]<-lapply(splitpc12[c("state")],function(x){
+#As matrices
+    sv<-data.frame(str_match(x$par,"(\\w+)\\[(\\d+),(\\d+),(\\d+)]"))[,3:5]
+    colnames(sv)<-c("Animal","Track","step")
+    pc12<-data.frame(x,sv)
+})
+
+#bind all matrices back together
+pc12<-bind_rows(splitpc12) 
+# some warning about unequal factor levels
+rm(splitpc12)
+
+#associate month with state
+#first you have to bring back the month index
+mm<-melt(MonthIndex)
+colnames(mm)<-c("Animal","Track","step","MonthA")
+pc12<-merge(pc12,mm,by=c("Animal","Track","step"),all.x=T)
+
+#complete level matching, ugly but successful
+
+pc12[pc12$parameter %in% c("alpha","gamma"),]$MonthA<-month.name[as.numeric(pc12$Month[pc12$parameter %in% c("alpha","gamma")])]
+pc12$MonthA<-factor(pc12$MonthA,levels=month.name)
+```
+Just a summary at this point
+alpha-> behavior, month
+gamma-> behavior, month
+theta->behavior
+phi-> Animal, track, step, behavior
+state-> animal, track, step
+
+lso when you bind the rows together there is a warning about unequal factor levels
+HAVING ISSUES HERE, won't let me run the last bit - says 13 variables to replace 12 variablves
+
+NEvermind....now it is working - maybe I ran it twice last time or something?
+
+Plot all but phi and state
+I THINK THIS IS THE CHAINS BUT WE NEED A BETTER WAY OF VISUALIZING ALSO I FEEL LIKE WE NEED MORE DRAWS
+```{r}
+#plot all but phi and state
+#I think this is the chains but we need a better way of visualizing
+ggplot(pc12[pc12$parameter %in% c("alpha"),],aes(x=Draw,y=value)) + facet_wrap(~par,ncol=3) + geom_line(aes(col=as.factor(chain))) + labs(col="Chain")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/alpha_chains.jpg", height=10, width=10)
+
+ggplot(pc12[pc12$parameter %in% c("gamma"),],aes(x=Draw,y=value)) + facet_wrap(~par,ncol=3) + geom_line(aes(col=as.factor(chain))) + labs(col="Chain")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/gamma_chains.jpg", height=10, width=10)
+
+ggplot(pc12[pc12$parameter %in% c("theta"),],aes(x=Draw,y=value)) + facet_wrap(~par,ncol=3) + geom_line(aes(col=as.factor(chain))) + labs(col="Chain")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/theta_chains.jpg")
+
+
+
+
+a<-pc12 %>% filter(parameter %in% c("state","phi")) %>% filter((parameter == "phi"&Behavior==2)|parameter =="state") %>% dplyr::select(Draw,chain,Animal,Track,step,value,parameter) %>% spread(key=parameter,value=value)
+ggplot(a,aes(x=phi,fill=as.factor(state-1))) + geom_density(alpha=0.7) + labs(fill="Behavior")
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/behavior.jpg")
+```
+
+Write some important csv files
+```{r}
+#write.csv
+write.csv(pc12,"/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/outdata_parse.csv")
+pc12<-read.csv("/Users/michellemodest/Dropbox/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/outdata_parse.csv")
+pc12$Behavior<-as.factor(pc12$Behavior)
+```
+Plot
+```{r}
+#Plot
+ggplot(data=pc12[pc12$parameter %in% c("gamma"),],aes(x=value)) + geom_histogram() + facet_wrap(~par,ncol=3) + theme_bw()  + ggtitle("Estimated parameters")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/gamma_hist.jpg", width=10, height=10)
+
+ggplot(data=pc12[pc12$parameter %in% c("alpha"),],aes(x=value)) + geom_histogram() + facet_wrap(~par,ncol=3) + theme_bw()  + ggtitle("Estimated parameters")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/alpha_hist.jpg", height=10, width=10)
+
+ggplot(data=pc12[pc12$parameter %in% c("theta"),],aes(x=value)) + geom_histogram() + facet_wrap(~par,ncol=3) + theme_bw()  + ggtitle("Estimated parameters")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/theta_hist.jpg")
+
+
+```
+Change in Autocorrelation over time
+```{r}
+pc12$MonthA<-factor(pc12$MonthA,levels=month.name)
+g<-pc12[pc12$parameter %in% c("gamma"),] %>% mutate(bstate=ifelse(Behavior==1,"Traveling","Area-restricted Search"))
+ggplot(data=g,aes(x=value,fill=MonthA)) + geom_density(alpha=0.7) + theme_bw()+ facet_wrap(~bstate,scales="free") + labs(fill="Month",x="Degree of movement autocorrelation") + scale_fill_brewer(palette="RdBu")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/Gammaplot.jpg",height=3,width=6,dpi=300)
+
+a<-pc12[pc12$parameter %in% c("gamma"),] %>% mutate(bstate=ifelse(Behavior==1,"Traveling ","Foraging"))
+
+ggplot(data=a,aes(y=value,x=MonthA)) + geom_boxplot() + theme_bw()  + ggtitle("Movement autocorrelation") + labs(x="Month",fill="Behavior") + facet_wrap(~bstate,scales="free")+ theme(axis.text.x=element_text(angle = -90, hjust = 0))
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/Gammabox.jpg",height=3,width=8)
+```
+WE seem to BE MISSING SO MUCH INFO IN G- like months, animals, etc
+Also two month A's are part of the problem - maybe that was the 13th parameter it was talking about
+Also the months have to be factors
+Change in transition probabilities over time
+```{r}
+a<-pc12[pc12$parameter %in% c("alpha"),] %>% mutate(bstate=ifelse(Behavior==1,"Remain Traveling ","Switch to Traveling"))
+ggplot(data=a,aes(x=value,fill=MonthA)) + geom_density(alpha=0.7) + theme_bw()+ facet_wrap(~bstate,scales="free") + labs(fill="Month",x="Transition Probability") + scale_fill_brewer(palette="RdBu")
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/Alphaplot.jpg",height=4,width=6,dpi=300)
+
+ggplot(data=a,aes(y=value,x=MonthA)) + geom_boxplot() + theme_bw()+ facet_wrap(~bstate,scales="free") + labs(x="Month",y="Transition Probability")+ theme(axis.text.x=element_text(angle = -90, hjust = 0))
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/Alphabox.jpg",height=3,width=8)
+```
+
+Parameter Summary
+(I took out all the monthA's, they need to go back)
+```{r}
+psum<-pc12 %>% filter(!parameter %in% c("phi","state")) %>% group_by(parameter,par) %>% summarize(mean=mean(value),lower=quantile(value,0.05),upper=quantile(value,0.95))
+
+as.data.frame(psum)
+
+write.csv(psum, "/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/paramsum.csv")
+
+ggplot(psum,aes(x=par,y=mean,ymax=upper,ymin=lower)) + geom_linerange() + geom_point() + facet_wrap(~parameter,scales="free", ncol=2)+ theme(axis.text.x=element_text(angle = -90, hjust = 0))
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/parameter_mean.jpg", height=10, width=6)
+#format gamma
+gammadf<-pc12 %>% filter(parameter=="gamma") %>% group_by(MonthA,Behavior) %>% summarize(mean=mean(value))
+
+write.csv(gammadf, "/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/gammasum.csv")
+#format alpha
+alphadf<-pc12 %>% filter(parameter=="alpha") %>% group_by(MonthA,Behavior) %>% summarize(mean=mean(value))
+write.csv(alphadf, "/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/alphasum.csv")
+#both
+simdf<-pc12 %>% filter(parameter %in% c("gamma","alpha")) %>% group_by(MonthA,Behavior,parameter) %>% summarize(mean=mean(value))
+
+```
+
+Behavioral Prediction
+```{r}
+#mean transition probability
+mean_phi<-pc12 %>% filter(parameter=="phi",Behavior==2) %>% mutate(step=as.numeric(as.character(step))) %>% group_by(Animal,Track,step) %>% summarize(phi=median(value)) %>% arrange(Animal,Track,step)
+write.csv(mean_phi, "/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/mean_phi.csv")
+#mode state for each position
+mode_state<-pc12 %>% filter(parameter %in% "state") %>% mutate(bstate=ifelse(value==1,"Traveling","Area-restricted Search")) %>% group_by(Animal,Track,step,bstate) %>% summarize(n=n()) %>% spread(key=bstate,value=n,fill=0)%>% mutate(ratio=`Area-restricted Search`/Traveling) %>% mutate(state=as.character(ifelse(ratio>=1,"Area-restricted Search","Traveling")))
+
+read.csv<-("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/mig6correct.csv")
+
+mig6<-merge(mig6,mean_phi,by=c("step","Track","Animal"))
+mig6<-merge(mig6,mode_state,by=c("step","Track","Animal"))
+
+write.csv(mig6, "/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/mig6_withparmodel12.csv")
+mig6<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/mig6_withparmodel12.csv")
+#make factor
+mig6$bstate<-factor(mig6$state)
+
+#ensure order for plotting
+mig6<-mig6 %>% arrange(Animal,Track,step,jStep)
+#Now we are going to use the methods from the other papers and calculate the ratio
+names(mig6)[names(mig6) == 'Area.restricted.Search'] <- 'ARS'
+mig7<-mig6%>%mutate(Behavior_ratio=((ARS*2)+(Traveling*1))/5000)
+mig7$Behavior<-cut(mig7$Behavior_ratio,c(.99,1.25,1.75,2.1),labels=c("Traveling","Unknown","ARS"))
+  mig7<-mig7 %>% arrange(Animal,Track,step,jStep)
+  write.csv(mig7, "/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/mig6_withunknowntoo7-4-2020.csv")
+pp<-c(mean(mig7$x),-40)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="hybrid",color="bw")
+ggmap(m)+geom_point(data=mig7, aes(x=x, y=y,col=Behavior,group=paste(Animal,Track)),size=.3,alpha=0.7)   + mytheme
+#ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/animals_state_map_noborders.jpg", width=8)
+
+pp<-c(mean(mig7$x),-40)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="hybrid",color="bw")
+p0<-ggmap(m)+geom_path(data=mig7, aes(x=x, y=y,col=Behavior,group=paste(Animal,Track)),size=.5,alpha=0.7)   + mytheme
+
+
+library("rgdal") # for `ogrInfo()` and `readOGR()`
+library("tools") # for `file_path_sans_ext()`
+library(ggplot2)
+library("sp") # for `point.in.polygon()` and `spDists()`
+library("tidyr") # for `gather()`
+library("readr") # for `write_tsv()`
+#path.eez.world.v8 <- ("/Users/danielpalacios/Documents/DMP/dmp_data/World_EEZ/World_EEZ_v8_20140228_LR")
+path.eez.world.v9 <- ("/Users/michellemodest/Google Drive/Documents/UCSC/WWF/World_EEZ_v9_20161021_LR")
+#fnam.eez.world.v8 <- "World_EEZ_v8_2014.shp"
+fnam.eez.world.v9 <- "eez_lr.shp"
+#eez.world.v8 <- readOGR(dsn = path.eez.world.v8, 
+#                        layer = file_path_sans_ext(fnam.eez.world.v8))
+eez.world.v9 <- readOGR(dsn = path.eez.world.v9, 
+                        layer = file_path_sans_ext(fnam.eez.world.v9))
+# A Large SpatialLinesDataFrame object with 281 features and 23 fields (18.9 Mb)
+
+# Extract the EEZ for the USA:
+#dat.eez.usa2 <- eez.world.v8[eez.world.v8@data$Country == "United States", ]
+# For v. 9 use $Territory1 instead of $Country:
+dat.eez.chile <- eez.world.v9[eez.world.v9@data$Territory1 == "Chile", ]
+dat.eez.peru <- eez.world.v9[eez.world.v9@data$Territory1 == "Peru", ]
+dat.eez.ec <- eez.world.v9[eez.world.v9@data$Territory1 == "Ecuador", ]
+dat.eez.col <- eez.world.v9[eez.world.v9@data$Territory1 == "Colombia", ]
+dat.eez.is <- eez.world.v9[eez.world.v9@data$Territory1 == "Islas San Félix and San Ambrosio", ]
+dat.eez.an <- eez.world.v9[eez.world.v9@data$Territory1 == "Antarctica", ]
+# A Formal class Large SpatialPolygonsDataFrame
+
+# Fortify the shapefile data:
+#dat.eez.usa2 <- fortify(dat.eez.usa2)
+# `fortify.shape()` did not work for v. 8 so we had to use `fortify()`.
+# message: Regions defined for each Polygons
+dat.eez.chile <- fortify(dat.eez.chile)
+dat.eez.peru <- fortify(dat.eez.peru)
+dat.eez.ec <- fortify(dat.eez.ec) 
+dat.eez.col <- fortify(dat.eez.col) 
+dat.eez.is<- fortify(dat.eez.is)
+dat.eez.an<- fortify(dat.eez.an) 
+# a 10298x30 dataframe
+ p0+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)
+ 
+  p0+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)
+ggmap(m)+geom_point(data=mig7, aes(x=x, y=y,col=Behavior,group=paste(Animal,Track)),alpha=0.7, size = 0.01)   + mytheme+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "yellow", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/beh_map_points_borders.svg",height=20,width=25)
+```
+
+#Spatial Prediction
+```{r}
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="hybrid",color="bw")
+
+ggmap(m)+geom_path(data=mig6, aes(x=x, y=y,col=bstate,group=paste(Animal,Track)),size=.2) + mytheme + labs(col="Behavior") +  facet_wrap(~Month)
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/beh_month_map.svg",height=20,width=25)
+
+ggmap(m)+geom_point(data=mig6, aes(x=x, y=y,col=bstate,group=paste(Animal,Track)),size=.2) + mytheme + labs(col="Behavior") +  facet_wrap(~Month)+ geom_path(data = dat.eez.chile, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+   geom_path(data = dat.eez.peru, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+   geom_path(data = dat.eez.col, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+      geom_path(data = dat.eez.ec, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+   geom_path(data = dat.eez.is, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)+
+    geom_path(data = dat.eez.an, 
+            aes(x = long, y = lat, group = group), 
+            colour = "red", size = 0.3)
+mig7$Month<-factor(mig7$Month,levels=month.name)
+ggmap(m)+geom_point(data=mig7, aes(x=x, y=y,col=Behavior,group=paste(Animal,Track)),size=.01)  + facet_wrap(~Month,nrow=2)+ theme(axis.text.x=element_text(angle = -90, hjust = 0))
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/animals_month_behavior.svg",height=20,width=25)
+
+
+
+#Pub version
+ggplot()+ theme_set(theme_gray(base_size = 18)) +geom_path(data=mig7, aes(x=x, y=y,col=Behavior,group=paste(Animal,Track)),size=0.7)  + borders(fill="grey40",size=0.5) + coord_cartesian(ylim = c(-69,10),xlim=c(-55,-85)) + theme_bw() + mytheme + scale_fill_manual(values=rep("NA",8)) + labs(col="Behavior") + scale_color_manual(values=c("deeppink","darkturquoise"))  + facet_wrap(~Month,nrow=2) + theme(legend.position="bottom") 
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/month_behavior_bw.jpg",height=7,width=10)
+```
+
+#By Individual
+
+```{r}
+ggmap(m)+geom_point(data=mig7, aes(x=x, y=y,col=Behavior,group=paste(Animal,Track)),size=.01)   + mytheme + facet_wrap(~Animal)
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/individuals_behavior_point.svg", height=20, width=25)
+
+```
+
+##Autocorrelation in Behavior
+```{r}
+#create proper time stamp
+ggplot(data=mig7,aes(x=as.POSIXct(timestamp),y=as.factor(Behavior))) + geom_line(aes(group=Track),size=1)+ theme_bw()  + facet_wrap(~Ptt,scales="free") + labs(x="Time",y="Behavior") + theme(axis.text.x=element_text(angle = -90, hjust = 0))
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/individuals_timeline.jpg", width=25, height=10)
+
+```
+As single timeline
+```{r}
+ggplot(data=mig7,aes(x=as.POSIXct(timestamp),y=as.factor(Behavior))) + geom_line(aes(group=paste(Animal,Track)),size=1)+ theme_bw()  + labs(x="Time",y="Behavior") + facet_wrap(~Year,scales="free")
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/behavior_year.jpg")
+```
+
+We would like to make the initial graphs for all the animals before track filtering, and including their sex
+```{r}
+biopsy<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/Palmer data/Mn_sex.csv")
+
+biopsy_prim<-biopsy%>%
+  count(Tag.ID)%>%
+  filter(n>1)
+
+
+mig3$Animal<-as.factor(mig3$Animal)
+Whale_sex<-mig3%>%
+  left_join(biopsy, c("Animal"="Tag.ID"))%>%dplyr::select(Animal:Date, Genetic.Sex:Pregnant)
+#lets see if we have sex info for more now
+
+mig<-Whale_sex%>%
+  group_by(Animal)%>%
+  filter(row_number()==1)
+
+names(Whale_sex)[names(Whale_sex)=='Year.x']<-'Year'
+
+
+Mig_sex<-Whale_sex
+
+Mig_sex<-Mig_sex%>%
+  unite(sex.preg,Genetic.Sex,Pregnant, remove=FALSE)
+flsex<-Mig_sex%>%
+  group_by(Animal)%>%
+  filter(row_number()==1)
+
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_point(data=Mig_sex, aes(x=x, y=y,col=Genetic.Sex),size=.25)+labs(col="Genetic.Sex")
+
+#Plot
+pp<-c(mean(Mig_sex$x),-40)
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_point(data=Mig_sex, aes(x=x, y=y,col=Genetic.Sex),size=.25)+ scale_color_manual(breaks = c("F", "M", "NA"),
+                        values=c("pink", "blue", "yellow")) +labs(col="Genetic.Sex")
+
+ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/JAGS Models/Model 12/4_13/correct version/MFmap.jpg")
+```
+

@@ -1,0 +1,95 @@
+---
+title: "Three whales"
+output: html_document
+---
+We are going to take a look at the speeds of the four whales that went all the way (and then also the energetics)
+
+
+```{r}
+library(tidyverse)
+library(argosfilter)
+library(stringr)
+library(ggplot2)
+library(ggmap)
+library(lubridate)
+```
+Steps:
+
+compare if the speeds are relatively stable
+1) compare the instantaneous speed with scatter point graph
+2) weekly speeds (or avg daily)
+
+first we are going to graph these three
+```{r}
+
+speedth<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/summary stats/data compilations/speeds_all.csv")
+avgsp3<-speedth%>%filter(Ptt%in%c("112699","121210","166123"))
+
+register_google(key="<insertgooglekeyhere>")
+pp<-c(mean(avgsp3$Longitude.x),-40)
+
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_path(data=avgsp3, aes(x=Longitude.x, y=Latitude.x,col=as.factor(Ptt)),size=.5)
+
+#so now that we have graphed it, looks like we will need to chop off some of the 166123
+na166123<-avgsp3%>%filter(Ptt=="166123")
+na166123$Date<-ymd(na166123$Date)
+na166123<-na166123%>%filter(Date>=as.Date("2017-06-14"))
+na112699<-avgsp3%>%filter(Ptt=="112699")
+m121210<-avgsp3%>%filter(Ptt=="121210")
+
+avgsp<-rbind(na166123,na112699,m121210)
+
+#now lets graph again and see
+
+pp<-c(mean(avgsp$Longitude.x),-40)
+
+m <- get_map(location=pp,source="google",zoom=3,scale=2,maptype="satellite",color = "bw")
+ggmap(m)+geom_path(data=avgsp, aes(x=Longitude.x, y=Latitude.x,col=as.factor(Ptt)),size=.5)
+#looks good
+
+```
+
+Then we are doing the weekly speed graphs
+```{r}
+wkspeed<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/summary stats/data compilations/weeks_all.csv")
+
+#grab the three
+wkspthree<-wkspeed%>%filter(Ptt%in%c("112699","121210","166123"))
+
+#set Ptt as factor
+wkspthree$Ptt<-as.factor(wkspthree$Ptt)
+#now graph them
+ggplot(data=wkspthree)+
+  geom_path(mapping=aes(x=week_num,y=Speed_km_h, color=Ptt), size=1)
+#ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/summary stats/graphs/Three_speeds_week.png", height = 20, width = 20)
+```
+
+Now let's look at graphing the avg speeds
+
+
+
+Now we are doing the avg speed graphs
+```{r}
+#graph julian day by speed
+#but first we should probably get rid of some of the ridiculous speeds
+avgspeed<-avgsp%>%filter(Speed_km_h<=22)
+#have to add Julian day if I want them all on the same graph
+avgspeed$julian<-yday(avgspeed$Date)
+avgspeed$Ptt<-as.factor(avgspeed$Ptt)
+ggplot(data=avgspeed)+
+  geom_point(mapping=aes(x=julian,y=Speed_km_h, color=Ptt))
+
+#ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/summary stats/graphs/Three_speeds_all_point.png", height = 20, width = 20)
+
+#Now do it as the smooth
+ggplot(data=avgspeed)+
+  geom_smooth(mapping=aes(x=julian,y=Speed_km_h, color=Ptt))
+#ggsave("/Users/michellemodest/Google Drive/Documents/UCSC/migration/R scripts/summary stats/graphs/Three_speeds_all_smooth.png", height = 20, width = 20)
+#all of them seem to have decreased speeds by end of migration
+ggplot(data=avgspeed)+
+  geom_line(mapping=aes(x=julian,y=Speed_km_h, color=Ptt))
+```
+
+
+

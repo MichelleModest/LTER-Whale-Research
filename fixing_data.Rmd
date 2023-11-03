@@ -1,0 +1,93 @@
+---
+title: "Fixing the data"
+output: html_document
+---
+This doc is all animals with no crazy points abd no dups
+
+Steps:
+1) Compile all the data
+2) convert to proper dates - check dates by looking @ first and last, but after you also have month name
+3) get rid of NA
+4) get rid of z class
+4) get rid of duplicates, total duplicates and just timestamp
+REMEMBER SOME OF THE @)!* TAGS WERE TURNED ON TOO EARLY
+1) Compile all the data
+```{r}
+
+f<-list.files("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data from dropbox",pattern="Locations",full.names=T,recursive = T)
+f
+gdat<-lapply(f,function(x) read.csv(x,stringsAsFactors=F))
+gdat<-bind_rows(gdat)
+head(gdat)
+
+tail(gdat)
+first<-gdat%>%group_by(Ptt)%>%filter(row_number()==1)
+
+gdat$timestamp<-as.POSIXct(gdat$Date,format="%H:%M:%S %d-%b-%Y",tz="GMT")
+gdat$timestamp[is.na(gdat$timestamp)]<-as.POSIXct(gdat$Date[is.na(gdat$timestamp)],format="%d/%m/%Y %H:%M ",tz="GMT")
+secondfirst<-gdat%>%group_by(Ptt)%>%filter(row_number()==1)
+sumdate<-gdat %>% group_by(Ptt) %>% summarize(minDate=min(timestamp),maxDate=max(timestamp))
+
+
+
+summary(gdat)
+
+gdat$Month<-months(gdat$timestamp)
+gdat$Month<-factor(gdat$Month,levels=month.name)
+gdat$Day<-days(gdat$timestamp)
+gdat$Year<-years(gdat$timestamp)
+head(gdat$Month)
+gdat<-gdat%>%
+  mutate(Year=gdat$Year)%>%
+  mutate(Month=gdat$Month)%>%
+  mutate(Day=gdat$Day,Date=format(timestamp,"%Y-%m-%d"))
+#remove blank
+gdat<-gdat %>% filter(!is.na(timestamp))
+
+pp<-c(mean(gdat$Longitude),-40)
+
+m <- get_map(location=pp,source="google",zoom=3,maptype="satellite",color = "bw")
+ggmap(m)+geom_path(data=gdat, aes(x=Longitude, y=Latitude,col=as.factor(Ptt)),size=.5)  + scale_color_discrete(guide="none") + theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) + labs(x="",y="")
+
+ggmap(m)+geom_path(data=gdat, aes(x=Longitude, y=Latitude,col=as.factor(Ptt)),size=.5)  + scale_color_discrete(guide="none") + theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) + facet_wrap(~Year)+labs(x="",y="")
+
+
+#filter out z
+gdat<-gdat%>%filter(Quality!="Z")
+str(gdat$Quality)
+
+#filter out duplicates
+gdat %>% group_by(Ptt,timestamp) %>% summarize(n=n()) %>% filter(n>1)
+gdat2<-gdat%>%distinct(Ptt, timestamp,.keep_all = TRUE)
+gdat2 %>% group_by(Ptt, timestamp, Latitude, Longitude) %>% summarize(n=n()) %>% filter(n>1)
+#Now we are good, plot again
+ggmap(m)+geom_path(data=gdat2, aes(x=Longitude, y=Latitude,col=as.factor(Ptt)),size=.5)  + scale_color_discrete(guide="none") + theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) + facet_wrap(~Year)+labs(x="",y="")
+gdat2<- gdat2 %>% mutate(X = row_number())
+#get rid of the points from the 2018 tags from 2013
+gdat2<-gdat2%>%filter(Latitude<=10)
+#We know wonky points in 123232 and 131130
+t123232<-gdat2%>%filter(Ptt==123232)
+t131130<-gdat2%>%filter(Ptt==131130)
+gdat2<-gdat2%>%filter(X!=24632)
+gdat2<-gdat2%>%filter(X!=44652)
+gdat2<-gdat2%>%filter(X!=25542)
+
+fn131130june<-t131130%>%filter(Month=="June")
+fn131130May<-t131130%>%filter(Month=="May")
+gdat2<-gdat2%>%filter(X!=44593)
+gdat2<-gdat2%>%filter(X!=44582)
+gdat2<-gdat2%>%filter(X!=44703)
+gdat2<-gdat2%>%filter(X!=1)
+gdat2<-gdat2%>%filter(X!=67302)
+gdat2<-gdat2%>%filter(X!=39228)
+gdat2<-gdat2%>%filter(X!=35905)
+weird<-gdat2%>%filter(Ptt==131112)
+eigt<-gdat2%>%filter(Year==2018)
+fif<-gdat2%>%filter(Year==2015) 
+pp<-c(mean(weird$Longitude),0)
+
+write.csv(gdat2, "/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/All_animals_cleaned.csv")
+sev<-gdat2%>%filter(Year==2017)
+
+ggmap(m)+geom_path(data=sev, aes(x=Longitude, y=Latitude,col=as.factor(Month)),size=.5)  + scale_color_discrete(guide="none") + theme(axis.text.x=element_blank(),axis.text.y=element_blank(),axis.ticks.x=element_blank(),axis.ticks.y=element_blank()) + facet_wrap(~Ptt)+labs(x="",y="")
+```

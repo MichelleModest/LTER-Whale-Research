@@ -1,0 +1,139 @@
+---
+title: "Untitled"
+output: html_document
+---
+#First attempt - Ben's model but with some updates (i.e. the t distribution, etc)
+## first step is to wrangle up the data correctly
+we want
+1. only migrators
+2. No duplicates (timestamp duplicates or location duplicates)
+3. Get rid of NAs
+4. Get rid of Z class
+5. Get rid of pre-migration data
+6. Calculate step lengths and tracks
+
+##load the proper programs
+```{r}
+library(tidyverse)
+library(lubridate)
+library(knitr)
+opts_chunk$set(echo=F,warning=F,message=F,fig.width = 11,fig.height = 5,cache=F)
+library(boot)
+library(raster)
+library(tidyr)
+library(ggplot2)
+#library(MASS) This fucks with dplyr, load later
+library(ggmap)
+library(dplyr)
+library(chron)
+library(gridExtra)
+library(stringr)
+library(R2jags)
+library(maptools)
+library(reshape2)
+#New model to be run, flag turned off if just updating.
+newModel<-T
+
+##ggplot theme
+mytheme<-theme(axis.text.x=element_blank(),axis.ticks.x=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank(),panel.grid=element_blank())
+```
+
+## Only migrators
+We have to decide whether we are keeping 123236 and 121208. Right now they are still included
+```{r}
+migrators<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/all_animals/all_sex_nodup.csv")
+migrators$Ptt<-as.factor(migrators$Ptt)
+summary(migrators)
+migrators<-migrators%>%filter(Ptt%in%c("112699", "121207", "121208", "121210", "123224", "123232", "123236", "131127", "131130", "131132", "131133", "131136"))
+#test that it worked
+mig<-migrators%>%
+  group_by(Ptt)%>%
+  filter(row_number()==1)
+mig
+migrators$timestamp<-as.POSIXct(migrators$timestamp,format="%Y-%b-%d %H:%M:%S",tz="GMT")
+
+```
+##2. No duplicates (timestamp duplicates or location duplicates)
+```{r}
+#first we will check if there are duplicate timestamps for any individuals
+time<-migrators %>% group_by(Ptt,timestamp) %>% summarize(n=n()) %>% filter(n>1)
+#looks like yes 
+# Now lets test if there are any duplicate locations for any of the animals
+location<-migrators%>%group_by(Ptt, Latitude.x, Longitude.x)%>%summarize(n=n())%>%filter(n>1)
+#no duplicates!
+
+ungroup(migrators)
+
+migrators<-migrators[!is.na(migrators$timestamp),]
+
+```
+
+##4. Get rid of Z class
+
+```{r}
+migrators<-migrators%>%filter(Quality!="Z")
+mig<-droplevels(migrators)
+```
+
+combine the genetic sex and pregnancy
+```{r}
+mig$Genetic.Sex<-as.character(mig$Genetic.Sex)
+mig$Pregnant<-as.character(mig$Pregnant)
+mig<-mig %>% 
+  unite(Sex_Rep, Genetic.Sex, Pregnant)
+test2<-mig%>%group_by(Sex_Rep)%>%summarize(n=n())%>%filter(n>1)
+```
+
+```{r}
+mig2<-mig
+mig2$Day<-days(mig2$timestamp)
+mig2$Year<-years(mig2$timestamp)
+
+mig2<-mig2%>%
+  mutate(Year=mig2$Year)%>%
+  mutate(Month=mig2$Month)%>%
+  mutate(Day=mig2$Day,Date=format(timestamp,"%Y-%m-%d"))
+mig2<-mig2%>%select(-Year, -Day)
+mig2$Date<-ymd(mig2$Date)
+
+f_l<-mig2%>%group_by(Ptt)%>%filter(row_number()==1 | row_number()==n())
+
+na112699<-mig2%>%filter(Ptt=="112699")
+fn121207<-mig2%>%filter(Ptt=="121207")
+fn121208<-mig2%>%filter(Ptt=="121208")
+m121210<-mig2%>%filter(Ptt=="121210")
+fp123224<-mig2%>%filter(Ptt=="123224")
+na123232<-mig2%>%filter(Ptt=="123232")
+fn123236<-mig2%>%filter(Ptt=="123236")
+na131127<-mig2%>%filter(Ptt=="131127")
+fn131130<-mig2%>%filter(Ptt=="131130")
+m131132<-mig2%>%filter(Ptt=="131132")
+m131133<-mig2%>%filter(Ptt=="131133")
+na131136<-mig2%>%filter(Ptt=="131136")
+
+na112699<-na112699%>%filter(Date>=as.Date("2012-06-15"))
+fn121207<-fn121207%>%filter(Date>=as.Date("2013-05-07"))
+fn121208<-fn121208%>%filter(Date>=as.Date("2013-02-12"))
+
+m121210<-m121210%>%filter(Date>=as.Date("2013-04-30"))
+fp123224<-fp123224%>%filter(Date>=as.Date("2013-05-23"))
+
+na123232<-na123232%>%filter(Date>=as.Date("2013-04-25"))
+
+fn123236<-fn123236%>%filter(Date>=as.Date("2013-03-16"))
+na131127<-na131127%>%filter(Date>=as.Date("2016-07-15"))
+fn131130<-fn131130%>%filter(Date>=as.Date("2016-04-27"))
+m131132<-m131132%>%filter(Date>=as.Date("2016-05-09"))
+m131133<-m131133%>%filter(Date>=as.Date("2016-07-05"))
+na131136<-na131136%>%filter(Date>=as.Date("2016-06-30"))
+
+mig_migonly <- rbind(na112699,fn121207,fn121208,m121210,fp123224,na123232,fn123236,na131127,fn131130, m131132,m131133,na131136)
+
+
+#Just an aside here
+
+f_l_migration<-mig_migonly%>%group_by(Ptt)%>%filter(row_number()==1 | row_number()==n())
+
+
+```
+

@@ -1,0 +1,1265 @@
+---
+title: "Summary_stats_9_20"
+output: html_document
+---
+---
+title: "Summary_stats"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(argosfilter)
+library(stringr)
+library(ggplot2)
+library(ggmap)
+library(lubridate)
+register_google(key="<insertgooglekeyhere>")
+```
+
+
+Let's take a look at our data
+```{r}
+filter65<-read.csv("/Users/michellemodest/Desktop/mig_sda_nodup_extras.csv")
+
+head(filter65)
+```
+
+Let's only keep the migrators
+```{r}
+#let's check it out
+check<-filter65%>%
+  group_by(Ptt)%>%
+  filter(row_number()==1)
+mig_65<-filter65%>%dplyr::select(Ptt:Year.x, Genetic.Sex:Pregnant,julian_day)
+```
+Create a column that includes sex and pregnancy status
+```{r}
+mig_65<-mig_65%>%unite(Sex_preg_status, Genetic.Sex, Pregnant, sep="_",remove=FALSE)
+check2<-mig_65%>%
+  group_by(Ptt)%>%
+  filter(row_number()==1)
+mig_65b<-mig_65%>%filter(Ptt!=121208)
+```
+Let's tidy things a bit more
+#filter out 121208
+
+```{r}
+
+mig_65_tidy<-mig_65b%>%
+  group_by(Ptt)%>%
+  filter(row_number()==1)
+```
+#we are going to go in here NOW and 
+#Lets make some lat/long graphs
+1. Julian Day
+2. Temperature
+3. Daylenght
+4. Sunrise
+5. Windspeed
+
+```{r}
+
+#try it with a whale
+#first convert the Ptts to categorical
+#First graph - all animals, all years
+mig_65b$Ptt <- as.factor(mig_65b$Ptt)
+ggplot(data=mig_65b)+
+  geom_point(mapping=aes(x=julian_day,y=Latitude.x, color=Ptt))
+
+#Second graph - all animals, all years - color by sex_status
+ggplot(data=mig_65b)+
+  geom_point(mapping=aes(x=julian_day,y=Latitude.x, color=Sex_preg_status),size=1, shape=1)+
+  facet_wrap(~Ptt)
+ggsave(filename= "jday_indiv.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+
+ggplot(data=mig_65b)+
+  geom_point(mapping=aes(x=julian_day,y=lat, color=Sex_preg_status),size=.75, shape=16) + labs(color="Sex and Reproductive Status")+scale_color_manual(labels = c("Female (Not Pregnant)", "Female (Juvenile)", "Female (Pregnant)", "Male", "Unknown"), values = c("Pink", "Purple", "Red", "Blue", "Turquoise" )) + xlab("Julian Day") + ylab ("Latitude") # for the x axis label
+
+ggsave(filename= "jday_all_sex.png",device="png", path="/Users/michellemodest/Desktop/")
+#Third graph - all animals, all years - color by sex
+ggplot(data=mig_65b)+
+  geom_point(mapping=aes(x=julian_day,y=Latitude.x, color=Genetic.Sex))
+
+#Third graph - all animals, all years, color by year
+mig_65b$Year.x<-as.factor(mig_65b$Year.x)
+ggplot(data=mig_65b)+
+  geom_point(mapping=aes(x=julian_day,y=Latitude.x, color=Year.x), size=1, shape=1)+coord_cartesian(xlim=c(100,200))
+ggsave(filename= "jday_all_yr.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+#do it by females
+fem<-mig_65b%>%filter(Genetic.Sex=="F")
+ggplot(data=fem)+
+  geom_point(mapping=aes(x=julian_day,y=lat, color=Sex_preg_status),size=.75, shape=16)+ labs(color="Sex and Reproductive Status")+scale_color_manual(labels = c("Female (Not Pregnant)", "Female (Juvenile)", "Female (Pregnant)", "Male", "Unknown"), values = c("Pink", "Purple", "Red", "Blue", "Turquoise" )) + xlab("Julian Day") + ylab ("Latitude")
+
+ggsave(filename= "jday_females.png",device="png", path="/Users/michellemodest/Desktop/")
+
+#now split by year, with groupings by sex.preg
+ggplot(data=mig_65b)+
+  geom_point(mapping=aes(x=julian_day, y=Latitude.x,color=Sex_preg_status), size=.3)+
+  facet_wrap(~Year.x, ncol=1)
+ggsave(filename= "jday_yr.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+#now split by sex.preg, with groupings by year
+ggplot(data=mig_65_tidy)+
+  geom_point(mapping=aes(x=julian_day, y=Latitude.x,color=Year.x), size=.3)+
+  facet_wrap(~Sex_preg_status, ncol=1)
+ggsave(filename= "jday_stat.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+
+ggplot(data=mig_65_tidy)+
+  geom_point(mapping=aes(x=julian_day, y=Latitude.x,color=Ptt), size=.3)+
+  facet_grid(Year.x~Sex_preg_status)
+ggsave(filename= "jday_yr_stat.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+
+
+```
+
+Maybe lets try same thing but with daylength. We saw some definite changes by year earlier
+```{r}
+
+mig_65_tidy$Day.length.x<-hms(mig_65_tidy$Day.length.x)
+mig_65_tidy$diff<-as.difftime(mig_65_tidy$Day.length.x)
+mig_65_tidy<-mig_65_tidy%>%mutate(Daylight_hrs=diff/3600)
+ggplot(data=mig_65_tidy)+
+  geom_point(mapping=aes(x=Daylight_hrs,y=Latitude.x, color=Sex_preg_status), size=.3)+
+  facet_wrap(~Ptt)
+ggsave(filename= "light_indiv.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+
+ggplot(data=mig_65_tidy)+
+  geom_point(mapping=aes(x=Daylight_hrs,y=Latitude.x, color=Sex_preg_status), size=.3)
+ggsave(filename= "light_all.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+
+ggplot(data=mig_65_tidy)+
+  geom_point(mapping=aes(x=Daylight_hrs,y=Latitude.x, color=Ptt), size=.3)+
+  facet_wrap(~Sex_preg_status)
+ggsave(filename= "light_sex.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+```
+
+#We are going to go in here now and before everything filter out duplicates and put a stronger vmask on
+```{r}
+mig_65_tidy%>% group_by(Ptt, timestamp) %>% summarize(n=n()) %>% filter(n>1)
+#getting rid of duplicate times
+mig_65_tidy<-mig_65_tidy%>%group_by(Ptt)%>%distinct(timestamp, .keep_all = TRUE)
+
+mig_65_tidy$timestamp<-ymd_hms(mig_65_tidy$timestamp)
+#now lets add the filter 
+  
+mfilter<-vmask(lat=mig_65_tidy$Latitude.x, lon=mig_65_tidy$Longitude.x, dtime=mig_65_tidy$timestamp, vmax=6)
+mig_65_tidy<-ungroup(mig_65_tidy)
+mig_65_tidy<-mig_65_tidy%>%mutate(mfilter=mfilter)
+filtergraph<-mig_65_tidy
+
+mig_65_tidy<-mig_65_tidy%>%filter(mfilter!="removed")
+mig_65_tidy1<-mig_65_tidy
+```
+Let's do the first version of speed - just the end points for each animal. First take out everything before migration date. 
+```{r}
+head(mig_65_tidy)
+mig_65_tidy$Date<-ymd(mig_65_tidy$Date)
+f_l<-mig_65_tidy%>%group_by(Ptt)%>%filter(row_number()==1 | row_number()==n())
+
+na112699<-mig_65_tidy%>%filter(Ptt=="112699")
+fn121207<-mig_65_tidy%>%filter(Ptt=="121207")
+fn121208<-mig_65_tidy%>%filter(Ptt=="121208")
+m121210<-mig_65_tidy%>%filter(Ptt=="121210")
+fp123224<-mig_65_tidy%>%filter(Ptt=="123224")
+na123232<-mig_65_tidy%>%filter(Ptt=="123232")
+fn123236<-mig_65_tidy%>%filter(Ptt=="123236")
+na131127<-mig_65_tidy%>%filter(Ptt=="131127")
+fn131130<-mig_65_tidy%>%filter(Ptt=="131130")
+m131132<-mig_65_tidy%>%filter(Ptt=="131132")
+m131133<-mig_65_tidy%>%filter(Ptt=="131133")
+na131136<-mig_65_tidy%>%filter(Ptt=="131136")
+
+na112699<-na112699%>%filter(Date>=as.Date("2012-06-15"))
+fn121207<-fn121207%>%filter(Date>=as.Date("2013-05-07"))
+fn121208<-fn121208%>%filter(Date>=as.Date("2013-02-12"))
+
+m121210_N<-m121210%>%filter(Date>=as.Date("2013-04-30")&Date<=as.Date("2013-06-29"))
+m121210_S<-m121210%>%filter(Date>=as.Date("2013-08-03 01:29:00"))
+m121210_S= m121210_S[-1,]
+
+fp123224<-fp123224%>%filter(Date>=as.Date("2013-05-23"))
+
+na123232_N<-na123232%>%filter(Date>=as.Date("2013-04-25"))
+na123232_N<-na123232_N[1:118,]
+na123232_S<-na123232%>%filter(Date>=as.Date("2013-07-21"))%>%filter(Latitude.x<=-2.190181)
+
+fn123236<-fn123236%>%filter(Date>=as.Date("2013-03-16"))
+na131127<-na131127%>%filter(Date>=as.Date("2016-07-15"))
+fn131130<-fn131130%>%filter(Date>=as.Date("2016-04-27"))
+m131132<-m131132%>%filter(Date>=as.Date("2016-05-09"))
+m131133<-m131133%>%filter(Date>=as.Date("2016-07-05"))
+na131136<-na131136%>%filter(Date>=as.Date("2016-06-30"))
+
+mig_migonly <- rbind(na112699,fn121207,fn121208,m121210_N,fp123224,na123232_N,fn123236,na131127,fn131130, m131132,m131133,na131136)
+
+mig_migonly%>%group_by(Ptt)%>%filter(row_number()==1)
+
+#Just an aside here
+
+f_l_migration<-mig_migonly%>%group_by(Ptt)%>%filter(row_number()==1 | row_number()==n())
+distance<-distanceTrack(f_l_migration$Latitude.x,f_l_migration$Longitude.x)
+distance<-append(distance,0,0)
+f_l_migration<-ungroup(f_l_migration)
+f_l_migration<-f_l_migration%>%
+mutate(Distance_m=distance*1000)
+f_l_migration$timestamp<-ymd_hms(f_l_migration$timestamp)
+f_l_migration$Seconds <- c(NA, difftime(f_l_migration$timestamp[-1],
+                             f_l_migration$timestamp[-nrow(f_l_migration)],
+                             units="secs")) 
+f_l_migration<-f_l_migration%>%mutate(Total_speed=Distance_m/Seconds)
+f_migration<-f_l_migration%>%group_by(Ptt)%>%filter(row_number()==2)
+f_migration_speed_65<-f_migration %>% 
+  group_by(Sex_preg_status) %>% 
+  summarise(Speed = mean(Total_speed))
+
+```
+
+#right now we will make a metadata table
+First lets constrain the data to between the start of migration and the end. We already have the starts constrained, now the end.
+```{r}
+
+migration_only_all<-mig_migonly%>%filter(Latitude.x<=-2.190181)
+migration_only_all%>%group_by(Ptt)%>%filter(row_number()==1)
+
+migration_all_f<-migration_only_all%>%group_by(Ptt)%>%filter(row_number()==1)
+migration_all_f
+
+names(migration_all_f)[names(migration_all_f) == 'Date'] <- 'N_Migration_Start'
+names(migration_all_f)[names(migration_all_f) == 'Latitude.x'] <- 'Latitude_at_start_of_N_migration'
+names(migration_all_f)[names(migration_all_f) == 'Longitude.x'] <- 'Longitude_at_start_of_N_migration'
+migration_all_l<-migration_only_all%>%group_by(Ptt)%>%filter(row_number()==n())
+migration_all_l
+names(migration_all_l)[names(migration_all_l) == 'Date'] <- 'N_Migration_End'
+names(migration_all_l)[names(migration_all_l) == 'Latitude.x'] <- 'Latitude_at_end_of_N_migration'
+names(migration_all_l)[names(migration_all_l) == 'Longitude.x'] <- 'Longitude_at_end_of_N_migration'
+migration_all_l<-migration_all_l%>%select(Ptt,N_Migration_End, Latitude_at_end_of_N_migration, Longitude_at_end_of_N_migration )
+
+#combine it 
+migration_fl_all<-migration_all_f%>%
+  left_join(migration_all_l, by="Ptt")
+migration_fl_all
+
+#let's figure out how many pings per animal
+
+pings<-migration_only_all%>%group_by(Ptt)%>%count()
+pings
+
+#combine it
+migration_fl_all<-migration_fl_all%>%
+  left_join(pings, by="Ptt")
+migration_fl_all
+names(migration_fl_all)[names(migration_fl_all) == 'n'] <- 'Number_of_transmissions_N'
+
+#Now lets say the duration of the migration
+#give it a shorter name because this is a pain
+mig<-migration_fl_all
+mig$N_Migration_Start<-ymd(mig$N_Migration_Start)
+mig$N_Migration_End<-ymd(mig$N_Migration_End)
+mig<-mig%>%mutate(Duration = as.numeric(N_Migration_End - N_Migration_Start, units="days"))
+
+
+```
+AHH! Two of the migrators headed back down, we should make sure to cut out those points, or at least have the heading back down be a seperate category. I have now filtered them above (when we were working with the seperate animals) and will add them back in as a Southward migration column
+```{r}
+
+#Now we will add the southward migrations - we aren't limiting their come down though
+s_mig<-rbind(m121210_S,na123232_S)
+
+#How many transmissions per
+
+pings_south<-s_mig%>%group_by(Ptt)%>%count()
+
+#Now just first and last column
+s_mig_f<-s_mig%>%group_by(Ptt)%>%filter(row_number()==1)
+
+names(s_mig_f)[names(s_mig_f) == 'Date'] <- 'S_Migration_Start'
+names(s_mig_f)[names(s_mig_f) == 'Latitude.x'] <- 'Latitude_at_start_of_S_migration'
+names(s_mig_f)[names(s_mig_f) == 'Longitude.x'] <- 'Longitude_at_start_of_S_migration'
+
+s_mig_l<-s_mig%>%group_by(Ptt)%>%filter(row_number()==n())%>%select(Ptt, Date, Latitude.x,Longitude.x)
+
+names(s_mig_l)[names(s_mig_l) == 'Date'] <- 'S_Migration_End'
+names(s_mig_l)[names(s_mig_l) == 'Latitude.x'] <- 'Latitude_at_end_of_S_migration'
+names(s_mig_l)[names(s_mig_l) == 'Longitude.x'] <- 'Longitude_at_end_of_S_migration'
+
+#combine it 
+s_mig_fl<-s_mig_f%>%
+  left_join(s_mig_l, by="Ptt")
+s_mig_fl<-s_mig_fl%>%select(Ptt, S_Migration_Start,S_Migration_End, Latitude_at_start_of_S_migration, Longitude_at_start_of_S_migration,Latitude_at_end_of_S_migration, Longitude_at_end_of_S_migration)
+
+#add number of pings
+s_mig_fl<-s_mig_fl%>%
+  left_join(pings_south, by="Ptt")
+
+names(s_mig_fl)[names(s_mig_fl) == 'n'] <- 'Number_of_transmissions_S'
+
+#Now lets add southbound migration
+mig<-mig%>%
+  left_join(s_mig_fl, by="Ptt")
+#add southbound duration
+
+mig$S_Migration_Start<-ymd(mig$S_Migration_Start)
+mig$S_Migration_End<-ymd(mig$S_Migration_End)
+mig<-mig%>%mutate(Duration_S = as.numeric(S_Migration_End - S_Migration_Start, units="days"))
+
+mdat<-mig%>%select(Ptt, Sex_preg_status, N_Migration_Start,N_Migration_End, Number_of_transmissions_N, Duration,  Latitude_at_start_of_N_migration, Longitude_at_start_of_N_migration,Latitude_at_end_of_N_migration, Longitude_at_end_of_N_migration,julian_day,Temperature.Average,Sea.Surface.Temperature,Day.length.x,Pressure_Average_mbar, Windspeed_Average, S_Migration_Start,S_Migration_End, Latitude_at_start_of_S_migration, Longitude_at_start_of_S_migration,Latitude_at_end_of_S_migration, Longitude_at_end_of_S_migration, Number_of_transmissions_S,Duration_S )
+```
+
+Then lets add up the distances and do total speed there.
+But first - total distance just first to last location (euclidian distance)
+Then - total difference traveled (sum of all distances travelled)
+```{r}
+
+distance<-distance(mdat$Latitude_at_start_of_N_migration, mdat$Latitude_at_end_of_N_migration, mdat$Longitude_at_start_of_N_migration, mdat$Longitude_at_end_of_N_migration)
+
+distance
+
+mdat<-data.frame(mdat,distance)
+mdat$distance
+names(mdat)[names(mdat) == 'distance'] <- 'Great.Circle.N'
+
+mdat<-mdat%>%select(Ptt, Sex_preg_status, N_Migration_Start,N_Migration_End, Number_of_transmissions_N, Great.Circle.N, Duration,   Latitude_at_start_of_N_migration, Longitude_at_start_of_N_migration,Latitude_at_end_of_N_migration, Longitude_at_end_of_N_migration,julian_day,Temperature.Average,Sea.Surface.Temperature,Day.length.x,Pressure_Average_mbar, Windspeed_Average, S_Migration_Start,S_Migration_End, Latitude_at_start_of_S_migration, Longitude_at_start_of_S_migration,Latitude_at_end_of_S_migration, Longitude_at_end_of_S_migration, Number_of_transmissions_S,Duration_S)
+
+#add the total speed km_hr
+mdat<-mdat%>%mutate(Total.speed_km_hr=(Great.Circle.N)/(Duration*24))
+
+
+```
+Let's try one animal for all the speeds
+```{r}
+options(scipen = 999)
+
+summary(na112699)
+w112699<-na112699%>%select(Ptt, Date, Latitude.x, Longitude.x, timestamp, Quality)
+w112699<-w112699 %>%distinct(timestamp, .keep_all=TRUE)
+w112699 %>% group_by(timestamp) %>% summarize(n=n()) %>% filter(n>1)
+
+d699<-distanceTrack(w112699$Latitude.x, w112699$Longitude.x)
+
+d699<-append(d699,0,0)
+w112699<-w112699%>%mutate(Distance_km=d699)
+w112699$timestamp<-ymd_hms(w112699$timestamp)
+w112699$Hours_elapsed <- c(NA, difftime(w112699$timestamp[-1],
+                      w112699$timestamp[-nrow(w112699)],
+                        units="hours")) 
+w112699<-w112699%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w112699)
+
+mean(w112699$Speed_km_h)
+summary(w112699)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_112699<-w112699%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_122699<-days_112699[c(1,8,15,22,29,36,43),]
+wk_122699<-wk_122699%>%select(Ptt:timestamp)
+
+distance_b<-distanceTrack(wk_122699$Latitude.x, wk_122699$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_122699<-ungroup(wk_122699)
+wk_122699<-wk_122699%>%
+mutate(Distance_km=distance_b)
+
+wk_122699$Date<-ymd(wk_122699$Date)
+
+wk_122699$Hours_elapsed <- c(NA, difftime(wk_122699$Date[-1],
+                      wk_122699$Date[-nrow(wk_122699)],
+                        units="hours")) 
+wk_122699<-wk_122699%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,6,1)
+wk_122699<-wk_122699%>%mutate(week_num=week_num)
+
+
+```
+
+We will make a whole new table for weekly speeds
+Now lets do the rest of the animals. We will draw from migration_only_all
+
+```{r}
+weeks<-migration_only_all%>%select(Ptt:timestamp, Sex_preg_status)
+#121207
+w121207<-weeks%>%filter(Ptt==121207)
+distance_c<-distanceTrack(w121207$Latitude.x, w121207$Longitude.x)
+summary(distance_c)
+
+
+d121207<-append(distance_c,0,0)
+w121207<-w121207%>%mutate(Distance_km=d121207)
+w121207$timestamp<-ymd_hms(w121207$timestamp)
+w121207$Hours_elapsed <- c(NA, difftime(w121207$timestamp[-1],
+                      w121207$timestamp[-nrow(w121207)],
+                        units="hours")) 
+w121207<-w121207%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w121207)
+
+summary(w121207)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_121207<-w121207%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_121207<-days_121207[c(1,8,15,22),]
+wk_121207<-wk_121207%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_121207$Latitude.x, wk_121207$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_121207<-ungroup(wk_121207)
+wk_121207<-wk_121207%>%
+mutate(Distance_km=distance_b)
+
+wk_121207$Date<-ymd(wk_121207$Date)
+
+wk_121207$Hours_elapsed <- c(NA, difftime(wk_121207$Date[-1],
+                      wk_121207$Date[-nrow(wk_121207)],
+                        units="hours")) 
+wk_121207<-wk_121207%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,3,1)
+wk_121207<-wk_121207%>%mutate(week_num=week_num)
+```
+
+Whale 121208
+
+```{r}
+w121208<-weeks%>%filter(Ptt==121208)
+distance_c<-distanceTrack(w121208$Latitude.x, w121208$Longitude.x)
+summary(distance_c)
+
+
+d121208<-append(distance_c,0,0)
+w121208<-w121208%>%mutate(Distance_km=d121208)
+w121208$timestamp<-ymd_hms(w121208$timestamp)
+w121208$Hours_elapsed <- c(NA, difftime(w121208$timestamp[-1],
+                      w121208$timestamp[-nrow(w121208)],
+                        units="hours")) 
+w121208<-w121208%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w121208)
+
+summary(w121208)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_121208<-w121208%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_121208<-days_121208[c(1,6,11),]
+wk_121208<-wk_121208%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_121208$Latitude.x, wk_121208$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_121208<-ungroup(wk_121208)
+wk_121208<-wk_121208%>%
+mutate(Distance_km=distance_b)
+
+wk_121208$Date<-ymd(wk_121208$Date)
+
+wk_121208$Hours_elapsed <- c(NA, difftime(wk_121208$Date[-1],
+                      wk_121208$Date[-nrow(wk_121208)],
+                        units="hours")) 
+wk_121208<-wk_121208%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,2,1)
+wk_121208<-wk_121208%>%mutate(week_num=week_num)
+```
+Whale 121210
+
+```{r}
+w121210<-weeks%>%filter(Ptt==121210)
+distance_c<-distanceTrack(w121210$Latitude.x, w121210$Longitude.x)
+summary(distance_c)
+
+
+d121210<-append(distance_c,0,0)
+w121210<-w121210%>%mutate(Distance_km=d121210)
+w121210$timestamp<-ymd_hms(w121210$timestamp)
+w121210$Hours_elapsed <- c(NA, difftime(w121210$timestamp[-1],
+                      w121210$timestamp[-nrow(w121210)],
+                        units="hours")) 
+w121210<-w121210%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w121210)
+
+summary(w121210)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_121210<-w121210%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_121210<-days_121210[c(1,8,15,22,29,36,43,50,57),]
+wk_121210<-wk_121210%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_121210$Latitude.x, wk_121210$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_121210<-ungroup(wk_121210)
+wk_121210<-wk_121210%>%
+mutate(Distance_km=distance_b)
+
+wk_121210$Date<-ymd(wk_121210$Date)
+
+wk_121210$Hours_elapsed <- c(NA, difftime(wk_121210$Date[-1],
+                      wk_121210$Date[-nrow(wk_121210)],
+                        units="hours")) 
+wk_121210<-wk_121210%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,8,1)
+wk_121210<-wk_121210%>%mutate(week_num=week_num)
+```
+
+Whale 123224
+```{r}
+w123224<-weeks%>%filter(Ptt==123224)
+distance_c<-distanceTrack(w123224$Latitude.x, w123224$Longitude.x)
+summary(distance_c)
+
+
+d123224<-append(distance_c,0,0)
+w123224<-w123224%>%mutate(Distance_km=d123224)
+w123224$timestamp<-ymd_hms(w123224$timestamp)
+w123224$Hours_elapsed <- c(NA, difftime(w123224$timestamp[-1],
+                      w123224$timestamp[-nrow(w123224)],
+                        units="hours")) 
+w123224<-w123224%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w123224)
+
+summary(w123224)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_123224<-w123224%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_123224<-days_123224[c(1,8,15,18, 21,25),]
+wk_123224<-wk_123224%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_123224$Latitude.x, wk_123224$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_123224<-ungroup(wk_123224)
+wk_123224<-wk_123224%>%
+mutate(Distance_km=distance_b)
+
+wk_123224$Date<-ymd(wk_123224$Date)
+
+wk_123224$Hours_elapsed <- c(NA, difftime(wk_123224$Date[-1],
+                      wk_123224$Date[-nrow(wk_123224)],
+                        units="hours")) 
+wk_123224<-wk_123224%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,5,1)
+wk_123224<-wk_123224%>%mutate(week_num=week_num)
+```
+
+Whale 123232 - careful - this one has some gaps
+```{r}
+w123232<-weeks%>%filter(Ptt==123232)
+distance_c<-distanceTrack(w123232$Latitude.x, w123232$Longitude.x)
+summary(distance_c)
+
+
+d123232<-append(distance_c,0,0)
+w123232<-w123232%>%mutate(Distance_km=d123232)
+w123232$timestamp<-ymd_hms(w123232$timestamp)
+w123232$Hours_elapsed <- c(NA, difftime(w123232$timestamp[-1],
+                      w123232$timestamp[-nrow(w123232)],
+                        units="hours")) 
+w123232<-w123232%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w123232)
+
+summary(w123232)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_123232<-w123232%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_123232<-days_123232[c(1,6,9),]
+wk_123232<-wk_123232%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_123232$Latitude.x, wk_123232$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_123232<-ungroup(wk_123232)
+wk_123232<-wk_123232%>%
+mutate(Distance_km=distance_b)
+
+wk_123232$Date<-ymd(wk_123232$Date)
+
+wk_123232$Hours_elapsed <- c(NA, difftime(wk_123232$Date[-1],
+                      wk_123232$Date[-nrow(wk_123232)],
+                        units="hours")) 
+wk_123232<-wk_123232%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,2,1)
+wk_123232<-wk_123232%>%mutate(week_num=week_num)
+```
+
+Whale 123236
+
+```{r}
+w123236<-weeks%>%filter(Ptt==123236)
+distance_c<-distanceTrack(w123236$Latitude.x, w123236$Longitude.x)
+summary(distance_c)
+
+
+d123236<-append(distance_c,0,0)
+w123236<-w123236%>%mutate(Distance_km=d123236)
+w123236$timestamp<-ymd_hms(w123236$timestamp)
+w123236$Hours_elapsed <- c(NA, difftime(w123236$timestamp[-1],
+                      w123236$timestamp[-nrow(w123236)],
+                        units="hours")) 
+w123236<-w123236%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w123236)
+
+summary(w123236)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_123236<-w123236%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_123236<-days_123236[c(1,8,13),]
+wk_123236<-wk_123236%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_123236$Latitude.x, wk_123236$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_123236<-ungroup(wk_123236)
+wk_123236<-wk_123236%>%
+mutate(Distance_km=distance_b)
+
+wk_123236$Date<-ymd(wk_123236$Date)
+
+wk_123236$Hours_elapsed <- c(NA, difftime(wk_123236$Date[-1],
+                      wk_123236$Date[-nrow(wk_123236)],
+                        units="hours")) 
+wk_123236<-wk_123236%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,2,1)
+wk_123236<-wk_123236%>%mutate(week_num=week_num)
+```
+
+Whale 131127 - had to wiggle it a bit
+```{r}
+w131127<-weeks%>%filter(Ptt==131127)
+distance_c<-distanceTrack(w131127$Latitude.x, w131127$Longitude.x)
+summary(distance_c)
+
+
+d131127<-append(distance_c,0,0)
+w131127<-w131127%>%mutate(Distance_km=d131127)
+w131127$timestamp<-ymd_hms(w131127$timestamp)
+w131127$Hours_elapsed <- c(NA, difftime(w131127$timestamp[-1],
+                      w131127$timestamp[-nrow(w131127)],
+                        units="hours")) 
+w131127<-w131127%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w131127)
+
+summary(w131127)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_131127<-w131127%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_131127<-days_131127[c(1,5,9),]
+wk_131127<-wk_131127%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_131127$Latitude.x, wk_131127$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_131127<-ungroup(wk_131127)
+wk_131127<-wk_131127%>%
+mutate(Distance_km=distance_b)
+
+wk_131127$Date<-ymd(wk_131127$Date)
+
+wk_131127$Hours_elapsed <- c(NA, difftime(wk_131127$Date[-1],
+                      wk_131127$Date[-nrow(wk_131127)],
+                        units="hours")) 
+wk_131127<-wk_131127%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,2,1)
+wk_131127<-wk_131127%>%mutate(week_num=week_num)
+```
+
+Whale 131130
+
+```{r}
+w131130<-weeks%>%filter(Ptt==131130)
+distance_c<-distanceTrack(w131130$Latitude.x, w131130$Longitude.x)
+summary(distance_c)
+
+
+d131130<-append(distance_c,0,0)
+w131130<-w131130%>%mutate(Distance_km=d131130)
+w131130$timestamp<-ymd_hms(w131130$timestamp)
+w131130$Hours_elapsed <- c(NA, difftime(w131130$timestamp[-1],
+                      w131130$timestamp[-nrow(w131130)],
+                        units="hours")) 
+w131130<-w131130%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w131130)
+
+summary(w131130)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_131130<-w131130%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_131130<-days_131130[c(1,8,15,22,29),]
+wk_131130<-wk_131130%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_131130$Latitude.x, wk_131130$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_131130<-ungroup(wk_131130)
+wk_131130<-wk_131130%>%
+mutate(Distance_km=distance_b)
+
+wk_131130$Date<-ymd(wk_131130$Date)
+
+wk_131130$Hours_elapsed <- c(NA, difftime(wk_131130$Date[-1],
+                      wk_131130$Date[-nrow(wk_131130)],
+                        units="hours")) 
+wk_131130<-wk_131130%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,4,1)
+wk_131130<-wk_131130%>%mutate(week_num=week_num)
+```
+Whale 131132
+
+```{r}
+
+w131132<-weeks%>%filter(Ptt==131132)
+distance_c<-distanceTrack(w131132$Latitude.x, w131132$Longitude.x)
+summary(distance_c)
+
+
+d131132<-append(distance_c,0,0)
+w131132<-w131132%>%mutate(Distance_km=d131132)
+w131132$timestamp<-ymd_hms(w131132$timestamp)
+w131132$Hours_elapsed <- c(NA, difftime(w131132$timestamp[-1],
+                      w131132$timestamp[-nrow(w131132)],
+                        units="hours")) 
+w131132<-w131132%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w131132)
+
+summary(w131132)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_131132<-w131132%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_131132<-days_131132[c(1,8,15,22,29,36),]
+wk_131132<-wk_131132%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_131132$Latitude.x, wk_131132$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_131132<-ungroup(wk_131132)
+wk_131132<-wk_131132%>%
+mutate(Distance_km=distance_b)
+
+wk_131132$Date<-ymd(wk_131132$Date)
+
+wk_131132$Hours_elapsed <- c(NA, difftime(wk_131132$Date[-1],
+                      wk_131132$Date[-nrow(wk_131132)],
+                        units="hours")) 
+wk_131132<-wk_131132%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,5,1)
+wk_131132<-wk_131132%>%mutate(week_num=week_num)
+```
+Whale 131133 - only recorded on odd days so making weeks be 6 days long
+
+```{r}
+
+w131133<-weeks%>%filter(Ptt==131133)
+distance_c<-distanceTrack(w131133$Latitude.x, w131133$Longitude.x)
+summary(distance_c)
+
+
+d131133<-append(distance_c,0,0)
+w131133<-w131133%>%mutate(Distance_km=d131133)
+w131133$timestamp<-ymd_hms(w131133$timestamp)
+w131133$Hours_elapsed <- c(NA, difftime(w131133$timestamp[-1],
+                      w131133$timestamp[-nrow(w131133)],
+                        units="hours")) 
+w131133<-w131133%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w131133)
+
+summary(w131133)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_131133<-w131133%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_131133<-days_131133[c(1,4,7,10,13),]
+wk_131133<-wk_131133%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_131133$Latitude.x, wk_131133$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_131133<-ungroup(wk_131133)
+wk_131133<-wk_131133%>%
+mutate(Distance_km=distance_b)
+
+wk_131133$Date<-ymd(wk_131133$Date)
+
+wk_131133$Hours_elapsed <- c(NA, difftime(wk_131133$Date[-1],
+                      wk_131133$Date[-nrow(wk_131133)],
+                        units="hours")) 
+wk_131133<-wk_131133%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,4,1)
+wk_131133<-wk_131133%>%mutate(week_num=week_num)
+
+```
+
+Whale 131136 - same thing - every other day only, 6 day weeks
+
+```{r}
+
+w131136<-weeks%>%filter(Ptt==131136)
+distance_c<-distanceTrack(w131136$Latitude.x, w131136$Longitude.x)
+summary(distance_c)
+
+
+d131136<-append(distance_c,0,0)
+w131136<-w131136%>%mutate(Distance_km=d131136)
+w131136$timestamp<-ymd_hms(w131136$timestamp)
+w131136$Hours_elapsed <- c(NA, difftime(w131136$timestamp[-1],
+                      w131136$timestamp[-nrow(w131136)],
+                        units="hours")) 
+w131136<-w131136%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w131136)
+
+summary(w131136)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_131136<-w131136%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_131136<-days_131136[c(1,4,7,10,13),]
+wk_131136<-wk_131136%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_131136$Latitude.x, wk_131136$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_131136<-ungroup(wk_131136)
+wk_131136<-wk_131136%>%
+mutate(Distance_km=distance_b)
+
+wk_131136$Date<-ymd(wk_131136$Date)
+
+wk_131136$Hours_elapsed <- c(NA, difftime(wk_131136$Date[-1],
+                      wk_131136$Date[-nrow(wk_131136)],
+                        units="hours")) 
+wk_131136<-wk_131136%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,4,1)
+wk_131136<-wk_131136%>%mutate(week_num=week_num)
+
+```
+lets redo the very first one
+
+```{r}
+#121207
+w121207<-weeks%>%filter(Ptt==121207)
+distance_c<-distanceTrack(w121207$Latitude.x, w121207$Longitude.x)
+summary(distance_c)
+
+
+d121207<-append(distance_c,0,0)
+w121207<-w121207%>%mutate(Distance_km=d121207)
+w121207$timestamp<-ymd_hms(w121207$timestamp)
+w121207$Hours_elapsed <- c(NA, difftime(w121207$timestamp[-1],
+                      w121207$timestamp[-nrow(w121207)],
+                        units="hours")) 
+w121207<-w121207%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w121207)
+
+summary(w121207)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_121207<-w121207%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_121207<-days_121207[c(1,8,15,22),]
+wk_121207<-wk_121207%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_121207$Latitude.x, wk_121207$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_121207<-ungroup(wk_121207)
+wk_121207<-wk_121207%>%
+mutate(Distance_km=distance_b)
+
+wk_121207$Date<-ymd(wk_121207$Date)
+
+wk_121207$Hours_elapsed <- c(NA, difftime(wk_121207$Date[-1],
+                      wk_121207$Date[-nrow(wk_121207)],
+                        units="hours")) 
+wk_121207<-wk_121207%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,3,1)
+wk_121207<-wk_121207%>%mutate(week_num=week_num)
+```
+
+Whale 121208
+
+```{r}
+w121208<-weeks%>%filter(Ptt==121208)
+distance_c<-distanceTrack(w121208$Latitude.x, w121208$Longitude.x)
+summary(distance_c)
+
+
+d121208<-append(distance_c,0,0)
+w121208<-w121208%>%mutate(Distance_km=d121208)
+w121208$timestamp<-ymd_hms(w121208$timestamp)
+w121208$Hours_elapsed <- c(NA, difftime(w121208$timestamp[-1],
+                      w121208$timestamp[-nrow(w121208)],
+                        units="hours")) 
+w121208<-w121208%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w121208)
+
+summary(w121208)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_121208<-w121208%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_121208<-days_121208[c(1,6,11),]
+wk_121208<-wk_121208%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_121208$Latitude.x, wk_121208$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_121208<-ungroup(wk_121208)
+wk_121208<-wk_121208%>%
+mutate(Distance_km=distance_b)
+
+wk_121208$Date<-ymd(wk_121208$Date)
+
+wk_121208$Hours_elapsed <- c(NA, difftime(wk_121208$Date[-1],
+                      wk_121208$Date[-nrow(wk_121208)],
+                        units="hours")) 
+wk_121208<-wk_121208%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,2,1)
+wk_121208<-wk_121208%>%mutate(week_num=week_num)
+```
+Whale 121210
+
+```{r}
+w121210<-weeks%>%filter(Ptt==121210)
+distance_c<-distanceTrack(w121210$Latitude.x, w121210$Longitude.x)
+summary(distance_c)
+
+
+d121210<-append(distance_c,0,0)
+w121210<-w121210%>%mutate(Distance_km=d121210)
+w121210$timestamp<-ymd_hms(w121210$timestamp)
+w121210$Hours_elapsed <- c(NA, difftime(w121210$timestamp[-1],
+                      w121210$timestamp[-nrow(w121210)],
+                        units="hours")) 
+w121210<-w121210%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w121210)
+
+summary(w121210)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_121210<-w121210%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_121210<-days_121210[c(1,8,15,22,29,36,43,50,57),]
+wk_121210<-wk_121210%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_121210$Latitude.x, wk_121210$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_121210<-ungroup(wk_121210)
+wk_121210<-wk_121210%>%
+mutate(Distance_km=distance_b)
+
+wk_121210$Date<-ymd(wk_121210$Date)
+
+wk_121210$Hours_elapsed <- c(NA, difftime(wk_121210$Date[-1],
+                      wk_121210$Date[-nrow(wk_121210)],
+                        units="hours")) 
+wk_121210<-wk_121210%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,8,1)
+wk_121210<-wk_121210%>%mutate(week_num=week_num)
+```
+
+Whale 112699
+
+```{r}
+w112699<-weeks%>%filter(Ptt==112699)
+w112699<-ungroup(w112699)
+w112699
+distance_c<-distanceTrack(w112699$Latitude.x, w112699$Longitude.x)
+summary(distance_c)
+
+
+d112699<-append(distance_c,0,0)
+w112699<-w112699%>%mutate(Distance_km=d112699)
+w112699$timestamp<-ymd_hms(w112699$timestamp)
+w112699$Hours_elapsed <- c(NA, difftime(w112699$timestamp[-1],
+                      w112699$timestamp[-nrow(w112699)],
+                        units="hours")) 
+w112699<-w112699%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+head(w112699)
+
+summary(w112699)
+
+#Now let's figure out monthly speeds
+#first we are gonna do one entry per day
+#Just kidding - weekly
+days_112699<-w112699%>%
+  group_by(Date)%>%
+  filter(row_number()==1)
+
+#then weekly speeds
+wk_112699<-days_112699[c(1,8,15,22,29,36,43),]
+wk_112699<-wk_112699%>%select(Ptt:Sex_preg_status)
+distance_b<-distanceTrack(wk_112699$Latitude.x, wk_112699$Longitude.x)
+distance_b<-append(distance_b,0,0)
+wk_112699<-ungroup(wk_112699)
+wk_112699<-wk_112699%>%
+mutate(Distance_km=distance_b)
+
+wk_112699$Date<-ymd(wk_112699$Date)
+
+wk_112699$Hours_elapsed <- c(NA, difftime(wk_112699$Date[-1],
+                      wk_112699$Date[-nrow(wk_112699)],
+                        units="hours")) 
+wk_112699<-wk_112699%>%mutate(Speed_km_h=Distance_km/Hours_elapsed)
+
+week_num<-seq(0,6,1)
+wk_112699<-wk_112699%>%mutate(week_num=week_num)
+
+```
+Lets make a data frame of the weeks data, and also of the avgs data 
+```{r}
+weeks_all<-rbind(wk_112699,wk_121207,wk_121208,wk_121210,wk_123224,wk_123232,wk_123236,wk_131127,wk_131130, wk_131132,wk_131133,wk_131136)
+
+library(merTools)
+
+#Now the avgs data
+w112699<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w112699_speeds.csv")
+
+w121207<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w121207_speeds.csv")
+
+w121208<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w121208_speeds.csv")
+
+w121210<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w121210_speeds.csv")
+
+w123224<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w123224_speeds.csv")
+
+w123232<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w123232_speeds.csv")
+
+w123236<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w123236_speeds.csv")
+
+w131127<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w131127_speeds.csv")
+
+w131130<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w131130_speeds.csv")
+
+w131132<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w131132_speeds.csv")
+
+w131133<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w131133_speeds.csv")
+
+w131136<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/migrators only/w131136_speeds.csv")
+
+speeds_all<-rbind(w112699,w121207,w121208,w121210,w123224,w123232,w123236,w131127,w131130, w131132,w131133,w131136)
+```
+
+Now lets see the avg weekly and total speeds per animal
+```{r}
+week_avg<-weeks_all%>%filter(!is.na(Speed_km_h))%>%group_by(Ptt)%>%summarize(mean(Speed_km_h))
+all_sp_avg<-speeds_all%>%filter(!is.na(Speed_km_h))%>%group_by(Ptt)%>%summarize(mean(Speed_km_h))
+total_length<-speeds_all%>%group_by(Ptt)%>%summarize(sum(Distance_km))
+```
+
+Now lets add it to the dataframe
+
+```{r}
+
+names(mdat)[names(mdat) == 'Total.speed_km_hr'] <- 'Great_C_distance_speed'
+
+names(week_avg)[names(week_avg) == 'mean(Speed_km_h)'] <- 'Avg Weekly Speed'
+mdat2<-mdat%>%
+  left_join(week_avg, by="Ptt")
+
+names(all_sp_avg)[names(all_sp_avg) == 'mean(Speed_km_h)'] <- 'Avg Speed'
+all_sp_avg$Ptt<-as.factor(all_sp_avg$Ptt)
+  
+  mdat3<-mdat2%>%
+  left_join(all_sp_avg, by="Ptt")
+  
+  total_length$Ptt<-as.factor(total_length$Ptt)
+  
+   mdat4<-mdat3%>%
+  left_join(total_length, by="Ptt") 
+```
+
+now lets do those speed charts he wanted
+```{r}
+#Third graph - all animals, all years, color by year
+
+ggplot(data=weeks_all)+
+  geom_line(mapping=aes(x=week_num,y=Speed_km_h, color=Ptt), size=1)
+
+#now split by year, with groupings by sex.preg
+ggplot(data=weeks_all)+
+  geom_line(mapping=aes(x=week_num,y=Speed_km_h, color=Sex_preg_status), size=.3)+
+  facet_wrap(~Ptt, nrow=5)
+ggsave(filename= "weekly_speed.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+```
+Now let's look at speed in general
+```{r}
+#Third graph - all animals, all years, color by year
+speeds_all$Ptt<-as.factor(speeds_all$Ptt)
+speeds_all$Date<-ymd(speeds_all$Date)
+
+ggplot(data=sp112699)+
+  geom_smooth(mapping=aes(x=Date,y=Speed_km_h, color=Ptt), size=1)
+sp112699<-speeds_all%>%filter(Ptt=="112699")
+#now split by year, with groupings by sex.preg
+ggplot(data=speeds_all)+
+  geom_smooth(mapping=aes(x=Date,y=Speed_km_h, color=Sex_preg_status), size=.3)+ theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  facet_wrap(~Ptt, ncol=3,scales="free")
+ggsave(filename= "avgspeed_smooth2.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+
+#now points
+ggplot(data=speeds_all)+
+  geom_point(mapping=aes(x=Date,y=Speed_km_h, color=Sex_preg_status), size=.3)+ theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  facet_wrap(~Ptt, scales="free")
+ggsave(filename= "avgspeed_points.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+```
+Now lets clean up mdat4
+```{r}
+names(mdat4)[names(mdat4) == 'Duration'] <- 'Duration_N(days)'
+names(mdat4)[names(mdat4) == 'Great.Circle.N'] <- 'Great_Circle_Distance_N(km)'
+names(mdat4)[names(mdat4) == 'sum(Distance_km)'] <- 'Total_track_distance_N(km)'
+names(mdat4)[names(mdat4) == 'Great_C_distance_speed'] <- 'Great_Circle_Speed_N(km/hr)'
+names(mdat4)[names(mdat4) == 'Avg Speed'] <- 'Avg_Speed_N(km/hr)'
+names(mdat4)[names(mdat4) == 'Avg Weekly Speed'] <- 'Avg_Weekly_Speed(km/hr)'
+names(mdat4)[names(mdat4) == 'Duration_S'] <- 'Duration_S(days)'
+names(mdat4)[names(mdat4) == 'julian_day'] <- 'N_Migration_Start_Julian_Day'
+names(mdat4)[names(mdat4) == 'Temperature.Average'] <- 'N_Migration_Start_Temperature_Average(C)'
+names(mdat4)[names(mdat4) == 'Sea.Surface.Temperature'] <- 'N_Migration_Start_Sea_Surface_Temperature(C)'
+names(mdat4)[names(mdat4) == 'Day.length.x'] <- 'N_Migration_Start_Day_length(hrs)'
+names(mdat4)[names(mdat4) == 'Pressure_Average_mbar'] <- 'N_Migration_Start_Pressure_Average_mbar'
+names(mdat4)[names(mdat4) == 'Windspeed_Average'] <- 'N_Migration_Start_Windspeed_Average'
+mdat4<-ungroup(mdat4)
+mdat6<-mdat4%>%
+  select(Ptt:Number_of_transmissions_N, `Duration_N(days)`,`Great_Circle_Distance_N(km)`,`Total_track_distance_N(km)`,`Great_Circle_Speed_N(km/hr)`,`Avg_Speed_N(km/hr)`,`Avg_Weekly_Speed(km/hr)`,Latitude_at_start_of_N_migration:Longitude_at_end_of_N_migration,S_Migration_Start,S_Migration_End,Number_of_transmissions_S,`Duration_S(days)`,Latitude_at_start_of_S_migration:Longitude_at_end_of_S_migration,N_Migration_Start_Julian_Day:`N_Migration_Start_Day_length(hrs)`)
+
+test<-mdat4%>%select(Ptt)
+```
+
+We are going to see how many data points removed
+```{r}
+filtergraph$Ptt<-as.factor(filtergraph$Ptt)
+mybbox<-make_bbox(data=filtergraph,lat=Latitude.x,lon=Longitude.x,f=0.1)
+troy <- get_map(location = mybbox, maptype = "toner-background")
+
+#Plot the map when speed filter is 65
+
+ggmap(troy) + geom_point(data=filtergraph,aes(x=Longitude.x, y=Latitude.x,col=Ptt),size=0.1) + scale_color_brewer(palette = "Spectral")+ facet_wrap(~mfilter)
+ggsave(filename= "data_removed.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+
+```
+
+Now we will do the maps with the timing
+```{r}
+
+#That one animal looks weird, just filter and get that data
+
+#Make a bounding box and download the imagery for the plot
+mybbox<-make_bbox(data=mig_65b,lat=Latitude.x,lon=Longitude.x,f=0.1)
+troy <- get_map(location = mybbox, maptype = "toner-background")
+mymap <- get_map(location = c(-60,-40), maptype = "toner-background", zoom=3)
+
+#Oops, the month format is not alphabetical
+mig_65_tidy1<-mig_65_tidy1 %>% mutate(Months=factor(Month,levels=month.name))
+
+
+#Plot the map
+ggmap(mymap) + geom_point(data=mig_65b,aes(x=Longitude.x, y=Latitude.x,col=as.factor(Sex_preg_status)),size=0.3) +theme(axis.text.x = element_text(angle = 90, hjust = 1)) +facet_wrap(~Sex_preg_status, ncol=3)
+new<-mig_65b%>%filter(Sex_preg_status!="NA_NA")
+
+ggmap(mymap) + geom_point(data=mig_65b,aes(x=Longitude.x, y=Latitude.x,col=as.factor(Sex_preg_status)),size=0.3, shape=1) +theme(axis.text.x = element_text(angle = 90, hjust = 1)) + labs(color="Sex and Reproductive Status")+scale_color_manual(labels = c("Female (Not Pregnant)", "Female (Juvenile)", "Female (Pregnant)", "Male", "Unknown"), values = c("Pink", "Purple", "Red", "Blue", "Green" ))+facet_wrap(~Sex_preg_status, ncol=3)+theme(strip.text.x = element_blank())
+
+mig<-mig_65b
+mig$Sex_preg_status <- factor(mig$Sex_preg_status, levels = c("F_Not-Pregnant", "F_Not-Pregnant-Juvenile", "M_" "NA_NA"), 
+                  labels = c("Female (Not Pregnant)", "Female (Juvenile)", "Female (Pregnant)", "Male"))
+ggsave(filename= "by_sex_map_facet.png",device="png", path="/Users/michellemodest/Desktop/")
+ggmap(mymap) + geom_point(data=new,aes(x=Longitude.x, y=Latitude.x,col=as.factor(Sex_preg_status)),size=0.3, shape=1) +theme(axis.text.x = element_text(angle = 90, hjust = 1)) + labs(color="Sex and Reproductive Status")+scale_color_manual(labels = c("Female (Not Pregnant)", "Female (Juvenile)", "Female (Pregnant)", "Male"), values = c("Pink", "Purple", "Red", "Blue" ))
+ggsave(filename= "all_on_one.png",device="png", path="/Users/michellemodest/Desktop/")
+```
+Now lets redo the daylight
+```{r}
+daylight<-filter65%>%filter(Ptt!=121208)
+library(lubridate)
+mig_65b$Date<-mdy(mig_65b$Date)
+names(mig_65b)[names(mig_65b) == 'Date'] <- 'date'
+names(mig_65b)[names(mig_65b) == 'Latitude.x'] <- 'lat'
+names(mig_65b)[names(mig_65b) == 'Longitude.x'] <- 'lon'
+
+sun <-getSunlightTimes(data = mig_65b,
+      keep = c("sunrise", "sunriseEnd", "sunset", "sunsetStart"), tz = "GMT")
+sun <- sun %>% mutate(id = row_number())
+mig_65b<-mig_65b%>%mutate(id = row_number())
+#now let's join
+
+sunriseset<-left_join(mig_65b, sun, by = "id")
+sunriseset2<-sunriseset%>%select(Ptt, lat.x:Month, Sex_preg_status:julian_day, date.y, sunrise:sunsetStart)
+
+sunriseset3<-sunriseset2%>%mutate(daylength = sunset - sunrise)
+ggplot(data=sunriseset3)+
+  geom_point(mapping=aes(x=daylength,y=lat.x, color=as.factor(Ptt)),size=1, shape=1)+facet_wrap(~Sex_preg_status)
+
+ggplot(data=sunriseset3)+
+  geom_point(mapping=aes(x=daylength,y=lat.x, color=Sex_preg_status),size=1, shape=1)
+do it without the males and unknowns
+ggsave(filename= "jday_indiv.png",device="png", path="/Users/michellemodest/Google Drive/Documents/UCSC/migration/plots/R plots/migrators/")
+
+data$time<-format(ymd_hms(data$timestamp), "%H:%M:%S")
+
+Mig_sex2Mig_sex2%>%
+  mutate(daylight.length2=Sunset-Sunrise)
+```
+

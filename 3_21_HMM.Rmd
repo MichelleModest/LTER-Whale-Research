@@ -1,0 +1,131 @@
+---
+title: "Questions HMM ben 3_20"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+#Hidden Markov Model
+
+```{r, include=FALSE}
+library(momentuHMM)
+library(sp)
+library(doParallel)
+library(lubridate)
+library(rgdal)
+library(tidyverse)
+```
+
+
+#Step 1: load your data
+```{r}
+whales<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/data compilations/all_animals/65filternodup.csv")
+head(whales)
+whales<-whales%>%
+  select(Ptt, Quality, Latitude.x, Longitude.x, timestamp)
+head(whales)
+```
+
+#Step 2: grab what you need 
+In this case, we are grabbing an animal
+
+**Ben, I'm guessing we can also do all of this with multiple animals?** That is when we do hierarchical
+
+```{r}
+whale<-whales%>%filter(Ptt==112699)
+head(whale)
+names(whale)[names(whale) == 'Latitude.x'] <- 'Latitude'
+names(whale)[names(whale) == 'Longitude.x'] <- 'Longitude'
+names(whale)[names(whale) == 'Quality'] <- 'lc'
+names(whale)[names(whale) == 'timestamp'] <- 'Time.name'
+names(whale)[names(whale) == 'Ptt'] <- 'ID'
+head(whale)
+whale$Time.name<-ymd_hms(whale$Time.name) #make sure in date format
+```
+
+#Fill in temporally irregular data with imputation
+```{r}
+nSims <- 100 # number of imputatons - replacing missing data with substituted values
+retryFits <- 30 # number attempt to re-fit based on random perturbation
+ncores <- 2 # number of CPU cores
+```
+**Ben, this data was grabbed from the turtle example**
+**Why did they choose 100 and 30?**
+**What exactly is random perturbation? And how does it come into play here?**
+
+Looks like the lat long has to be converted to UTM coordinates. 
+```{r}
+
+# project to UTM coordinates using package rgdal 
+llcoord <- SpatialPoints(whale %>% select(Longitude,Latitude), proj4string=CRS("+proj=longlat +datum=WGS84")) 
+
+utmcoord <- spTransform(llcoord,CRS("+proj=utm +zone=19 ellps=WGS84"))
+
+# add UTM locations to data frame 
+whale$x <- attr(utmcoord,"coords")[,1] 
+whale$y <- attr(utmcoord,"coords")[,2]
+
+whale<-whale%>%
+  select(ID, Time.name, x, y, lc)
+head(whale)
+```
+
+```{r}
+inits <- list(a = c(whale$x[1],0,
+                    whale$y[1],0), 
+              P = diag(c(5000^2, 10*3600^2, 5000^2, 10*3600^2)))
+
+err.model=list(x=~lc-1,y=~lc-1) #this is to do with Argos Quality
+fixPar<-c(log(1000*c(0.290,0.452,0.534,NA,NA,NA)),log(1000*c(0.122,0.239,0.301,NA,NA,NA)),NA,NA) #why do there have to be 14 of these?
+
+crwOut<-crawlWrap(whale,ncores=1,timeStep="12 hours", retryFits=retryFits,
+                  err.model=err.model,Time.name="Time.name", initial.state=inits,
+                  theta=c(7.730711, 8.216563, 8.505832, 7.103412, 7.245771, 7.935648, 5.371427, -10.677923),#theta - the number of transitions - so 4X2
+                  fixPar = fixPar) 
+
+plot(crwOut,ask=FALSE)
+#YAAAAAY WE HAVE A TRACK
+
+```
+**How do they come up with the inits P=diag numbers, and what does that represent again? I'm guessing the diagonal of some matrix, but which matrix?**
+
+** is P just P(Zt), i.e. the matrix of state-dependent distributions? I.e. probability of certain observation, given a specific state? But in that case shouldn't each number be less than 1?**
+
+**How do we come up with theta values and what is it really?**
+
+**What is fixedPar standing in for?** **How do we get the right value for whales?** **These are just the turtle ones. **
+
+**what is the meaning behind the constr bit? Again, this is all the turtle values**
+Now lets do the second step vaguely using the nfs example
+```{r}
+nbStates<-2
+dist<-list(step="gamma",angle="wrpcauchy")
+estAngleMean<-list(angle=TRUE)
+circularAngleMean<-list(angle=TRUE)
+
+stepDM<-matrix(c(1,0,1,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,1),nrow=2*nbStates)
+stepcons<-c(1,2,1,1,1,1)
+# constrain turning angle concentration parameters: transit > resting
+angleDM<-matrix(c(1,0,1,-1,0,0,0,1,0),nrow=nbStates)
+anglecons<-c(1,2,1)
+
+
+DM<-list(step=stepDM,angle=angleDM)
+cons<-list(step=stepcons,angle=anglecons)
+
+
+Par0<-list(step=c(9.132130, 9.200282, 0, 8.579123, 8.640819),
+           angle=c(0, -16.0417715, -0.4749668))
+
+whaleFits<-MIfitHMM(crwOut, nSims=nSims, ncores=ncores,
+                     nbStates=nbStates,dist=dist,Par0=Par0,DM=DM,estAngleMean = list(angle = FALSE),retryFits=retryFits)
+
+
+```
+
+
+
+
+
+
+

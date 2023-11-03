@@ -1,0 +1,165 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+
+```{r }
+register_google(key="<insertgooglekeyhere>")
+library(tidyverse)
+library(onewaytests)
+mdat<-read.csv("/Users/michellemodest/Google Drive/Documents/UCSC/migration/linear regression speed/id_jday_speed_sex.csv")
+
+```
+lets fix the sex fields
+```{r}
+mdat[10,4]<-"F"
+mdat[10,5]<-"P"
+mdat[12,5]<-"P"
+mdat[13,5]<-"NP"
+mdat[14,5]<-"P"
+mdat2<-mdat%>%
+  unite(sex.preg,Sex,Pregant, remove=FALSE)
+mf<-lm(Mean_speed~sex.preg, mdat2)
+summary(mf)
+mdat3<-mdat2%>%filter(sex.preg!="_")
+mf2<-lm(Mean_speed~sex.preg, mdat3)
+summary(mf2)
+```
+
+First we are going to filter it out so that we are only using speeds in the actual migration
+
+```{r}
+
+```
+Ok I think we are all good and that 6/02 might just be wrong in the other sheet. Worth looking at though.
+
+```{r}
+xdml<-lm(Mean_speed~Julian_Day, mdat)
+summary(xdml)
+```
+what if I did M vs F
+```{r}
+mf<-lm(Mean_speed~Sex, mdat)
+summary(mf)
+```
+NAAAH
+
+Now we are going to look at the residuals
+```{r}
+plot(fitted(xdml),residuals(xdml))
+qqnorm(residuals(xdml))
+dfbeta(xdml)
+hist(residuals(xdml))
+#looks like animal 7, i.e. 131130 is influencing things rather a lot, lets try without
+mdat2<-mdat%>%filter(ID!=131130)
+
+norm2<-lm(Mean_speed~Julian_Day, mdat2)
+summary(norm2)
+plot(fitted(norm2),residuals(norm2))
+qqnorm(residuals(norm2))
+dfbeta(norm2)
+
+```
+Lets try log transofmring
+```{r}
+
+
+mdat$logspeed<-log10(mdat$Mean_speed)
+xdml2<-lm(logspeed~Julian_Day, mdat)
+summary(xdml2)
+plot(fitted(xdml2),residuals(xdml2))
+hist(residuals(xdml2))
+scatter.smooth(x=mdat$Julian_Day, y=mdat$logspeed, main="logspeed ~ Julian_Day")  # scatterplot
+dfbeta(xdml2)
+
+#get rid of the outlier
+mdat2$logspeed<-log10(mdat2$Mean_speed)
+log2<-lm(logspeed~Julian_Day, mdat2)
+summary(log2)
+plot(fitted(log2),residuals(log2))
+qqnorm(residuals(log2))
+hist(residuals(log2))
+dfbeta(log2)
+```
+
+Both of the models run better without 131130. So probably say that. 
+
+
+BASICALLY
+looks like we do the regression, we do a log transform, we do it both with and without the influential data point, but both times we learn that there is no linesar relationship. 
+
+
+```{r}
+
+
+xdml<-lm(Mean_speed~sex.preg, mdat3)
+summary(xdml)
+plot(fitted(xdml),residuals(xdml))
+qqnorm(residuals(xdml))
+dfbeta(xdml)
+hist(residuals(xdml))
+
+mdat3$logspeed<-log2(mdat3$Mean_speed)
+log2<-lm(logspeed~sex.preg, mdat3)
+summary(log2)
+plot(fitted(log2),residuals(log2))
+qqnorm(residuals(log2))
+hist(residuals(log2))
+dfbeta(log2)
+#exponential trans
+mdat3$expspeed<-exp(mdat3$Mean_speed)
+xdml<-lm(expspeed~sex.preg, mdat3)
+summary(xdml)
+plot(fitted(xdml),residuals(xdml))
+qqnorm(residuals(xdml))
+dfbeta(xdml)
+hist(residuals(xdml))
+# now try the ANOVA
+
+one.way <- aov(Mean_speed ~ sex.preg, data = mdat3)
+summary(one.way)
+par(mfrow=c(2,2))
+plot(one.way)
+par(mfrow=c(1,1))
+
+ ggplot(mdat3, aes(x = sex.preg, y = Mean_speed)) +
+  geom_point(cex = 1.5, pch = 1.0,position = position_jitter(w = 0.1, h = 0))
+ 
+ xdml<-lm(Mean_speed~Sex, mdat3)
+summary(xdml)
+plot(fitted(xdml),residuals(xdml))
+qqnorm(residuals(xdml))
+dfbeta(xdml)
+hist(residuals(xdml))
+
+mdat3$logspeed<-log2(mdat3$Mean_speed)
+log2<-lm(logspeed~Sex, mdat3)
+summary(log2)
+plot(fitted(log2),residuals(log2))
+qqnorm(residuals(log2))
+hist(residuals(log2))
+dfbeta(log2)
+#exponential trans
+mdat3$expspeed<-exp(mdat3$Mean_speed)
+xdml<-lm(expspeed~Sex, mdat3)
+summary(xdml)
+plot(fitted(xdml),residuals(xdml))
+qqnorm(residuals(xdml))
+dfbeta(xdml)
+hist(residuals(xdml))
+# now try the ANOVA
+
+one.way <- aov(Mean_speed ~ Sex, data = mdat3)
+summary(one.way)
+par(mfrow=c(2,2))
+plot(one.way)
+par(mfrow=c(1,1))
+
+ ggplot(mdat3, aes(x = Sex, y = Mean_speed)) +
+  geom_point(cex = 1.5, pch = 1.0,position = position_jitter(w = 0.1, h = 0))
+ welch.test(Mean_speed~Sex, data=mdat3)
+ welch.test(Mean_speed ~ sex.preg, data = mdat3)
+(Mean_speed ~ sex.preg, data = mdat3)
+ welch_anova_test(Mean_speed ~ sex.preg, data = mdat3)
+```
